@@ -1,0 +1,52 @@
+# Agent configuration. Adjust the provider/model here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: kentinel
+data:
+  # "ollama" (default, local) or a cloud provider: "anthropic", "openai",
+  # "deepseek", "gemini" (each needs its API key in agent-secrets).
+  LLM_PROVIDER: "ollama"
+  # qwen3:0.6b is small enough for modest clusters (~1.5GB RAM) and supports
+  # tool calling. Use a bigger model (qwen3, llama3.1) or anthropic for
+  # noticeably better analysis quality.
+  LLM_MODEL: "qwen3:0.6b"
+  OLLAMA_HOST: "http://ollama.kentinel.svc:11434" # only used when LLM_PROVIDER=ollama
+  AGENT_REVIEW_INTERVAL: "5m"
+  # Discord notifications: enable here (or in the Settings UI) and put the
+  # webhook URL in the agent-secrets Secret (DISCORD_WEBHOOK_URL).
+  NOTIFICATIONS_ENABLED: "false"
+  NOTIFY_MIN_SEVERITY: "warning" # or "critical"
+  # Insight history persistence (survives pod restarts; on the agent-data PVC).
+  INSIGHT_DB_PATH: "/data/insights.db"
+  INSIGHT_RETENTION_DAYS: "90"
+  # Metrics source for the agent's usage/throttling tools. Points at the
+  # bundled Prometheus (06-prometheus.yaml) by default; set your own
+  # Prometheus URL here or in the Settings UI. Empty disables metrics tools.
+  PROMETHEUS_URL: "http://prometheus.kentinel.svc:9090"
+  LOG_FORMAT: "json"
+  LOG_LEVEL: "info"
+---
+# API keys and webhook URLs. Set them out-of-band (or from the Settings UI,
+# which persists here) instead of committing real values:
+#   kubectl -n kentinel create secret generic agent-secrets \
+#     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+# REPLACE_ME placeholders are treated as "not configured" so
+# `kubectl apply -f deploy/k8s/` works for the ollama provider with no
+# secrets at all. NOTE: re-applying this file overwrites values saved from
+# the Settings UI — apply it selectively after first install.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agent-secrets
+  namespace: kentinel
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: "REPLACE_ME"
+  OPENAI_API_KEY: "REPLACE_ME"
+  DEEPSEEK_API_KEY: "REPLACE_ME"
+  GEMINI_API_KEY: "REPLACE_ME"
+  DISCORD_WEBHOOK_URL: ""
+  SLACK_WEBHOOK_URL: ""
+  TEAMS_WEBHOOK_URL: ""

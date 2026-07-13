@@ -1,0 +1,85 @@
+{{- if .Values.ollama.enabled }}
+# Bundled Ollama: the default, keyless LLM provider. Disable (ollama.enabled=false)
+# when using a cloud provider or an external Ollama.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-ollama-models
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.ollama.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ollama
+  labels:
+    {{- include "kentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kentinel.selector" . | nindent 6 }}
+      app.kubernetes.io/component: ollama
+  template:
+    metadata:
+      labels:
+        {{- include "kentinel.selector" . | nindent 8 }}
+        app.kubernetes.io/component: ollama
+    spec:
+      securityContext:
+        fsGroup: 65534
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+              name: http
+          env:
+            - name: OLLAMA_KEEP_ALIVE
+              value: "30m"
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    for i in $(seq 1 60); do ollama list >/dev/null 2>&1 && break; sleep 2; done
+                    ollama pull {{ .Values.ollama.model }} || true
+          readinessProbe:
+            httpGet: { path: /api/tags, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/tags, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources: {{- toYaml .Values.ollama.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-ollama-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-ollama
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "kentinel.selector" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+  ports:
+    - port: 11434
+      targetPort: http
+{{- end }}

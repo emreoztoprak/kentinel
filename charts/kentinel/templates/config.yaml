@@ -1,0 +1,37 @@
+# Agent configuration. The Settings UI live-applies changes and writes them
+# back into this ConfigMap and Secret, so they survive pod restarts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-agent-config
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+data:
+  LLM_PROVIDER: {{ .Values.llm.provider | quote }}
+  LLM_MODEL: {{ .Values.llm.model | quote }}
+  OLLAMA_HOST: {{ include "kentinel.ollamaHost" . | quote }}
+  AGENT_REVIEW_INTERVAL: {{ .Values.agent.reviewInterval | quote }}
+  AGENT_MONITOR_ENABLED: {{ .Values.agent.monitorEnabled | quote }}
+  NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
+  NOTIFY_MIN_SEVERITY: {{ .Values.notifications.minSeverity | quote }}
+  {{- if .Values.agent.persistence.enabled }}
+  INSIGHT_DB_PATH: "/data/insights.db"
+  {{- end }}
+  INSIGHT_RETENTION_DAYS: {{ .Values.agent.insightRetentionDays | quote }}
+  PROMETHEUS_URL: {{ include "kentinel.prometheusUrl" . | quote }}
+  LOG_FORMAT: {{ .Values.logFormat | quote }}
+  LOG_LEVEL: {{ .Values.logLevel | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-agent-secrets
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: {{ .Values.llm.apiKeys.anthropic | quote }}
+  OPENAI_API_KEY: {{ .Values.llm.apiKeys.openai | quote }}
+  DEEPSEEK_API_KEY: {{ .Values.llm.apiKeys.deepseek | quote }}
+  GEMINI_API_KEY: {{ .Values.llm.apiKeys.gemini | quote }}
+  DISCORD_WEBHOOK_URL: {{ .Values.notifications.discordWebhookUrl | quote }}
+  SLACK_WEBHOOK_URL: {{ .Values.notifications.slackWebhookUrl | quote }}
+  TEAMS_WEBHOOK_URL: {{ .Values.notifications.teamsWebhookUrl | quote }}

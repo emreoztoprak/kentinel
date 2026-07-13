@@ -1,0 +1,123 @@
+# Demo incidents: apply on top of 01-shop.yaml to break things in four
+# distinct, realistic ways — each showcases a different diagnosis path.
+#
+#   payments-api    -> CrashLoopBackOff with root cause in the LOGS
+#   checkout        -> ImagePullBackOff from a typo'd image tag (EVENTS)
+#   recommendations -> CPU-throttled but "Running" (only METRICS reveal it)
+#   analytics       -> Pending, unschedulable resource request (EVENTS)
+#
+#   make demo-incident  -> apply
+#   make demo-reset     -> remove again (cluster goes back to green)
+---
+# CrashLoopBackOff: the logs tell a clear story (bad DB credentials) that
+# the AI assistant can diagnose end-to-end.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: shop
+  labels: { app: payments-api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: payments-api }
+  template:
+    metadata:
+      labels: { app: payments-api }
+    spec:
+      containers:
+        - name: payments-api
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "[payments-api] starting v1.4.2 (build 8f3a2c1)";
+              echo "[payments-api] loading config from /etc/payments/config.yaml";
+              echo "[payments-api] connecting to postgres at payments-db.shop.svc:5432 ...";
+              sleep 5;
+              echo "[payments-api] ERROR pq: password authentication failed for user \"payments\"";
+              echo "[payments-api] retrying (1/3)..."; sleep 2;
+              echo "[payments-api] ERROR pq: password authentication failed for user \"payments\"";
+              echo "[payments-api] retrying (2/3)..."; sleep 2;
+              echo "[payments-api] ERROR pq: password authentication failed for user \"payments\"";
+              echo "[payments-api] FATAL could not initialize database pool: authentication failed (3 retries exhausted)";
+              echo "[payments-api] hint: verify the PAYMENTS_DB_PASSWORD in secret payments-db-credentials";
+              exit 1
+          resources:
+            requests: { cpu: 10m, memory: 8Mi }
+            limits: { memory: 32Mi }
+---
+# ImagePullBackOff: a one-character typo in the tag ("alpin"). The fix is a
+# YAML edit away — great for the propose-a-fix narrative.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: shop
+  labels: { app: checkout }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: checkout }
+  template:
+    metadata:
+      labels: { app: checkout }
+    spec:
+      containers:
+        - name: checkout
+          image: nginx:1.27-alpin # <- intentional typo (should be -alpine)
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+# CPU throttling: pod is Running, logs are clean, events are clean — only
+# the metrics tools reveal that it's throttled >90% of the time.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendations
+  namespace: shop
+  labels: { app: recommendations }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: recommendations }
+  template:
+    metadata:
+      labels: { app: recommendations }
+    spec:
+      containers:
+        - name: recommendations
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "[recommendations] model loaded, scoring products";
+              while true; do :; done
+          resources:
+            requests: { cpu: 50m, memory: 8Mi }
+            limits: { cpu: 100m, memory: 32Mi } # <- burns 100% of a tiny limit
+---
+# Pending / unschedulable: asks for more CPU than any node has. Events show
+# FailedScheduling with the exact reason.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics
+  namespace: shop
+  labels: { app: analytics }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: analytics }
+  template:
+    metadata:
+      labels: { app: analytics }
+    spec:
+      containers:
+        - name: analytics
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests: { cpu: "8", memory: 64Mi } # <- no node is this big
+            limits: { memory: 128Mi }

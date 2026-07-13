@@ -1,0 +1,19 @@
+Kentinel is deploying to namespace {{ .Release.Namespace }}.
+
+Open the UI (ClusterIP by design — no auth, keep it off the public network):
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-server 8080:80
+
+then visit http://localhost:8080
+
+{{- if .Values.ollama.enabled }}
+
+The bundled Ollama pulls "{{ .Values.ollama.model }}" on first boot — the
+first cluster review may take a few minutes to appear. For much better
+analysis quality, switch to a cloud provider (Anthropic/OpenAI/DeepSeek/
+Gemini) on the Settings page — keys are stored write-only.
+{{- end }}
+
+Try the AI: break something (kubectl run oops --image=nginx:no-such-tag),
+wait one review interval, and watch the dashboard flag it — then ask the
+assistant "why is the oops pod failing?".

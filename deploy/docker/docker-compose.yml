@@ -1,0 +1,82 @@
+# Docker (local development) mode. The default provider is ollama (local,
+# free), so include the ollama profile:
+#
+#   cd deploy/docker
+#   docker compose --profile ollama up --build
+#   docker compose exec ollama ollama pull qwen3   # once
+#
+# To use Anthropic Claude instead (better analysis quality):
+#   export ANTHROPIC_API_KEY=sk-ant-...
+#   LLM_PROVIDER=anthropic docker compose up --build
+#
+# The UI is at http://localhost:8080. Both services talk to the cluster from
+# your host kubeconfig (mounted read-only). Ports bind to 127.0.0.1 only —
+# this stack has no authentication.
+
+services:
+  server:
+    # The prebuilt image is pulled by default; `docker compose up --build`
+    # builds from source instead (requires the full repo).
+    image: ghcr.io/emreoztoprak/kentinel-server:latest
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.server
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      AGENT_URL: http://agent:8090
+      KUBECONFIG: /kube/config
+      LOG_FORMAT: json
+    volumes:
+      - ${KUBECONFIG_FILE:-~/.kube/config}:/kube/config:ro
+    # Reach a kind/minikube API server listening on the host's loopback.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - agent
+
+  agent:
+    image: ghcr.io/emreoztoprak/kentinel-agent:latest
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.agent
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OLLAMA_HOST: http://ollama:11434
+      AGENT_REVIEW_INTERVAL: ${AGENT_REVIEW_INTERVAL:-5m}
+      NOTIFICATIONS_ENABLED: ${NOTIFICATIONS_ENABLED:-false}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      NOTIFY_MIN_SEVERITY: ${NOTIFY_MIN_SEVERITY:-warning}
+      INSIGHT_DB_PATH: /data/insights.db
+      # Point at a reachable Prometheus to enable the agent's metrics tools
+      # (e.g. http://host.docker.internal:9090). Empty = disabled.
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-}
+      KUBECONFIG: /kube/config
+      LOG_FORMAT: json
+    volumes:
+      - ${KUBECONFIG_FILE:-~/.kube/config}:/kube/config:ro
+      - agent-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Optional local LLM. Start with: docker compose --profile ollama up
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:
+  agent-data:

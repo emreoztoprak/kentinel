@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: kentinel
+  labels:
+    app.kubernetes.io/name: kentinel
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kentinel
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kentinel
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: server
+      containers:
+        - name: server
+          image: ghcr.io/emreoztoprak/kentinel-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: AGENT_URL
+              value: http://agent.kentinel.svc:8090
+            - name: LOG_FORMAT
+              value: json
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+---
+# ClusterIP by design: access via
+#   kubectl -n kentinel port-forward svc/server 8080:80
+# Do NOT expose this Service publicly — the UI has no authentication and can
+# exec into pods. See docs/security.md.
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: kentinel
+spec:
+  selector:
+    app.kubernetes.io/name: kentinel
+    app.kubernetes.io/component: server
+  ports:
+    - port: 80
+      targetPort: http

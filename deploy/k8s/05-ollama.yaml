@@ -1,0 +1,102 @@
+# In-cluster Ollama for the default (local, free) LLM provider.
+# The postStart hook pulls the model configured below on first boot; the
+# model is cached on the PVC so restarts are fast.
+#
+# qwen3:0.6b needs ~1.5GB RAM. On small clusters check node headroom first:
+#   kubectl describe node | grep -A6 "Allocated resources"
+# If you use the anthropic provider instead, you can delete everything in
+# this file: kubectl -n kentinel delete deploy/ollama svc/ollama pvc/ollama-models
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: kentinel
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: kentinel
+  labels:
+    app.kubernetes.io/name: kentinel
+    app.kubernetes.io/component: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # PVC is ReadWriteOnce
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kentinel
+      app.kubernetes.io/component: ollama
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kentinel
+        app.kubernetes.io/component: ollama
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+              name: http
+          env:
+            # Keep the model loaded between requests so the 5m review
+            # interval doesn't pay the model-load cost every time.
+            - name: OLLAMA_KEEP_ALIVE
+              value: "30m"
+          lifecycle:
+            postStart:
+              exec:
+                # Pull the default model once the server is up. `|| true` so a
+                # temporary registry hiccup doesn't kill the pod — pull
+                # manually in that case (see docs/deployment.md).
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    for i in $(seq 1 60); do ollama list >/dev/null 2>&1 && break; sleep 2; done
+                    ollama pull qwen3:0.6b || true
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 3Gi
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: ollama-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: kentinel
+spec:
+  selector:
+    app.kubernetes.io/name: kentinel
+    app.kubernetes.io/component: ollama
+  ports:
+    - port: 11434
+      targetPort: http

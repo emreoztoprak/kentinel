@@ -1,0 +1,37 @@
+# --- Go ---
+/bin/
+*.test
+*.out
+cover.out
+coverage.html
+go.work
+go.work.sum
+
+# --- Frontend ---
+web/node_modules/
+web/dist/
+npm-debug.log*
+yarn-error.log*
+
+# --- Env / secrets (never commit credentials) ---
+.env
+.env.*
+*.local
+kubeconfig
+*.kubeconfig
+*.pem
+*.key
+
+# --- Logs & temp ---
+*.log
+tmp/
+
+# --- Editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db

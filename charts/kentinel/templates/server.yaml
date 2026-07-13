@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-server
+  labels:
+    {{- include "kentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kentinel.selector" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "kentinel.selector" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: {{ .Release.Name }}-server
+      containers:
+        - name: server
+          image: "{{ .Values.image.prefix }}-server:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: AGENT_URL
+              value: http://{{ .Release.Name }}-agent.{{ .Release.Namespace }}.svc:8090
+            - name: AGENT_CONFIGMAP_NAME
+              value: {{ .Release.Name }}-agent-config
+            - name: AGENT_SECRET_NAME
+              value: {{ .Release.Name }}-agent-secrets
+            - name: LOG_FORMAT
+              value: {{ .Values.logFormat | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources: {{- toYaml .Values.server.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+---
+# ClusterIP by design: access via
+#   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-server 8080:80
+# Do NOT expose publicly — the UI has no authentication and can exec into pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-server
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "kentinel.selector" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  ports:
+    - port: 80
+      targetPort: http

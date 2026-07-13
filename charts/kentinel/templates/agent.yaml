@@ -1,0 +1,90 @@
+{{- if .Values.agent.persistence.enabled }}
+# Insight history database (SQLite; use block storage, avoid NFS).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-agent-data
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.agent.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-agent
+  labels:
+    {{- include "kentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  # Exactly one replica: the agent is single-writer by design (one review
+  # loop, one notification stream, one SQLite writer).
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kentinel.selector" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        {{- include "kentinel.selector" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+    spec:
+      serviceAccountName: {{ .Release.Name }}-agent
+      securityContext:
+        fsGroup: 65532 # distroless nonroot uid; makes the data volume writable
+      {{- if .Values.agent.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-agent-data
+      {{- end }}
+      containers:
+        - name: agent
+          image: "{{ .Values.image.prefix }}-agent:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8090
+              name: http
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-agent-config
+            - secretRef:
+                name: {{ .Release.Name }}-agent-secrets
+          {{- if .Values.agent.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources: {{- toYaml .Values.agent.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-agent
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "kentinel.selector" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+  ports:
+    - port: 8090
+      targetPort: http

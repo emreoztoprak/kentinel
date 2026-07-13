@@ -1,0 +1,76 @@
+# Kentinel Helm values.
+# Quickstart: helm install kentinel ./charts/kentinel -n kentinel --create-namespace
+# Everything runs with local models (Ollama) by default — no API keys needed.
+
+image:
+  # Images are published as <prefix>-server and <prefix>-agent.
+  prefix: ghcr.io/emreoztoprak/kentinel
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# --- LLM provider ---
+llm:
+  # "ollama" (default, local) or "anthropic" | "openai" | "deepseek" | "gemini"
+  provider: ollama
+  # Empty = provider default (the bundled Ollama uses a small model; see ollama.model)
+  model: "qwen3:0.6b"
+  # API keys for cloud providers. Also settable later from the Settings UI
+  # (stored write-only, persisted to the chart's Secret).
+  apiKeys:
+    anthropic: ""
+    openai: ""
+    deepseek: ""
+    gemini: ""
+
+# --- Bundled Ollama (local LLM) ---
+ollama:
+  enabled: true
+  model: "qwen3:0.6b" # pulled automatically on first boot (~1.5GB RAM to run)
+  # When enabled=false but llm.provider=ollama, point at your own Ollama:
+  externalHost: ""
+  storage: 5Gi
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { memory: 3Gi }
+
+# --- Bundled Prometheus (metrics for the agent) ---
+prometheus:
+  enabled: true
+  retention: 7d
+  storage: 2Gi
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  # To use an existing Prometheus instead: set enabled=false and put its URL
+  # here (or change it later in the Settings UI).
+  externalUrl: ""
+
+# --- Agent behavior ---
+agent:
+  reviewInterval: 5m
+  monitorEnabled: true
+  insightRetentionDays: 90
+  # Persist review history across restarts.
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+# --- Notifications (all optional; also configurable from the Settings UI) ---
+notifications:
+  enabled: false
+  minSeverity: warning # or "critical"
+  discordWebhookUrl: ""
+  slackWebhookUrl: ""
+  teamsWebhookUrl: ""
+
+# --- UI server ---
+server:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+logFormat: json
+logLevel: info
