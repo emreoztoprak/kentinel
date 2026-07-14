@@ -97,7 +97,6 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           severity: CRITICAL,HIGH
-          platform: linux/amd64
       - name: Scan agent image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -106,7 +105,6 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           severity: CRITICAL,HIGH
-          platform: linux/amd64
 
   chart:
     needs: [images, scan]
