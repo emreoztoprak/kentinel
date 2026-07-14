@@ -76,8 +76,40 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-agent:${{ steps.version.outputs.version }}
             ${{ env.IMAGE_PREFIX }}-agent:latest
 
-  chart:
+  scan:
     needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION="${{ inputs.version || '' }}"
+          [ -z "$VERSION" ] && VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+      # Fails the release on CRITICAL/HIGH vulnerabilities that have a fix
+      # available (ignore-unfixed: unpatched base-image CVEs would otherwise
+      # block every release until upstream ships a fix).
+      - name: Scan server image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}-server:${{ steps.version.outputs.version }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          platform: linux/amd64
+      - name: Scan agent image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}-agent:${{ steps.version.outputs.version }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          platform: linux/amd64
+
+  chart:
+    needs: [images, scan]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
