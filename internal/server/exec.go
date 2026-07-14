@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
@@ -16,10 +18,30 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
-	// Same-origin in practice: the SPA is served by this server (or the Vite
-	// dev proxy). v1 has no auth, so we accept the upgrade and document the
-	// trusted-network assumption in docs/security.md.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin:     checkExecOrigin,
+}
+
+// checkExecOrigin defends against cross-site WebSocket hijacking: without an
+// Origin check, any website open in the user's browser can script a
+// WebSocket straight to this (unauthenticated, localhost-trusted) endpoint
+// and get a pod shell. We compare hostnames (not full origins) so this
+// allows same-origin production/Docker access and the Vite dev proxy (SPA
+// on :5173, API on :8080) alike, while still rejecting a third-party site.
+// Requests with no Origin header (non-browser clients) are allowed.
+func checkExecOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	reqHost := r.Host
+	if h, _, err := net.SplitHostPort(reqHost); err == nil {
+		reqHost = h
+	}
+	return u.Hostname() == reqHost
 }
 
 // terminal message protocol (JSON over the websocket):

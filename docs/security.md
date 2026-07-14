@@ -72,6 +72,11 @@ With `LLM_PROVIDER=ollama`, nothing leaves your infrastructure.
   writes from a stale editor tab).
 - Exec/log/tool inputs are capped (lines, bytes, iterations) to bound abuse.
 - WebSocket exec sessions die with the connection; stdin closes the shell.
+- The exec WebSocket checks `Origin` against the request host, so a
+  malicious website you happen to have open can't script a connection to
+  your local Kentinel instance (cross-site WebSocket hijacking) — this is a
+  best-effort layer, not a substitute for keeping the port off shared
+  networks.
 
 ## Reporting
 
