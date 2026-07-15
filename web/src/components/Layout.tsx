@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { api } from "../api/client";
@@ -53,10 +53,22 @@ const NAV_SECTIONS: { title: string; items: { label: string; to: string }[] }[] 
   },
 ];
 
+// Pages whose data isn't namespace-filtered — the selector would suggest a
+// control that silently does nothing.
+const NON_NAMESPACED_PATHS = new Set(["/", "/assistant", "/insights", "/settings", "/docs"]);
+
+function isNamespaceScoped(pathname: string): boolean {
+  if (NON_NAMESPACED_PATHS.has(pathname) || pathname.startsWith("/docs/")) return false;
+  if (pathname === "/resources/nodes") return false; // nodes are cluster-scoped
+  return true;
+}
+
 export default function Layout({ children }: { children: ReactNode }) {
   const { namespace, setNamespace } = useNamespace();
   const { dark, toggle } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const showNamespace = isNamespaceScoped(location.pathname);
 
   const { data: namespaces } = useQuery({
     queryKey: ["namespaces"],
@@ -108,21 +120,25 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-500 dark:text-slate-400">Namespace</label>
-            <select
-              className="input"
-              value={namespace}
-              onChange={(e) => setNamespace(e.target.value)}
-            >
-              <option value="">All namespaces</option>
-              {(namespaces ?? []).map((ns) => (
-                <option key={ns} value={ns}>
-                  {ns}
-                </option>
-              ))}
-            </select>
-          </div>
+          {showNamespace ? (
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-500 dark:text-slate-400">Namespace</label>
+              <select
+                className="input"
+                value={namespace}
+                onChange={(e) => setNamespace(e.target.value)}
+              >
+                <option value="">All namespaces</option>
+                {(namespaces ?? []).map((ns) => (
+                  <option key={ns} value={ns}>
+                    {ns}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div />
+          )}
           <button className="btn-ghost" onClick={toggle} title="Toggle theme">
             {dark ? "🌙 Dark" : "☀️ Light"}
           </button>
