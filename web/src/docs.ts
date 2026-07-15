@@ -16,11 +16,12 @@ export interface Doc {
   content: string;
 }
 
-// The README opens with a raw-HTML logo block for GitHub. react-markdown
-// (correctly) doesn't render raw HTML, so strip HTML blocks for the in-app
-// view — the app shows the logo in the sidebar already.
+// The README opens with a raw-HTML header (logo, centered title, tagline)
+// for GitHub. react-markdown (correctly) doesn't render raw HTML, so strip
+// those blocks for the in-app view — the app shows the logo and title in
+// the sidebar already.
 function stripHTMLBlocks(markdown: string): string {
-  return markdown.replace(/<p[^>]*>[\s\S]*?<\/p>\s*/gi, "");
+  return markdown.replace(/<(p|h[1-6]|div)[^>]*>[\s\S]*?<\/\1>\s*/gi, "");
 }
 
 export const DOCS: Doc[] = [
