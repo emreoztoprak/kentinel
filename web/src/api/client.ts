@@ -132,6 +132,10 @@ export interface AgentConfig {
   teamsWebhookSet: boolean;
   notifyMinSeverity: string;
   prometheusUrl: string;
+  // Whether this state survives a pod restart (a working SQLite file +
+  // encryption key in the agent). false in Docker mode without
+  // INSIGHT_DB_PATH — the change still applies live either way.
+  persistent: boolean;
 }
 
 export interface AgentConfigUpdate {
@@ -149,18 +153,11 @@ export interface AgentConfigUpdate {
   prometheusUrl: string; // empty disables metrics
 }
 
-export interface AgentConfigUpdateResult {
-  config: AgentConfig;
-  persisted: boolean;
-  persistError: string;
-}
-
 export interface ServerSettings {
   agentUrl: string;
   staticDir: string;
   inCluster: boolean;
   namespace: string;
-  settingsPersist: boolean;
 }
 
 // ---- API calls ----
@@ -216,7 +213,7 @@ export const api = {
     ),
   agentConfig: () => apiFetch<AgentConfig>("/api/v1/agent/config"),
   updateAgentConfig: (update: AgentConfigUpdate) =>
-    apiFetch<AgentConfigUpdateResult>("/api/v1/agent/config", {
+    apiFetch<AgentConfig>("/api/v1/agent/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(update),

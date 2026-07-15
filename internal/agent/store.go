@@ -3,6 +3,7 @@ package agent
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -25,9 +26,10 @@ type Store struct {
 	insights []Insight // ring buffer, newest first
 	capacity int
 
-	db        *sql.DB
-	retention time.Duration
-	log       *slog.Logger
+	db          *sql.DB
+	retention   time.Duration
+	settingsKey []byte // AES-256 key protecting the settings table; nil disables settings persistence
+	log         *slog.Logger
 }
 
 // HistoryQuery filters the history listing.
@@ -79,11 +81,22 @@ func NewPersistentStore(path string, retentionDays int, capacity int, log *slog.
 		s.insights = restored
 		log.Info("insight history restored", "path", path, "restored", len(restored), "retentionDays", retentionDays)
 	}
+
+	key, err := loadOrCreateSettingsKey(path)
+	if err != nil {
+		log.Warn("settings encryption key unavailable; settings will not survive restarts", "error", err)
+	} else {
+		s.settingsKey = key
+	}
 	return s
 }
 
 // Persistent reports whether insights survive restarts.
 func (s *Store) Persistent() bool { return s.db != nil }
+
+// SettingsPersistent reports whether settings survive restarts (requires
+// both a working database and a usable encryption key).
+func (s *Store) SettingsPersistent() bool { return s.db != nil && s.settingsKey != nil }
 
 // Close releases the database (tests; the agent runs until process exit).
 func (s *Store) Close() error {
@@ -126,7 +139,12 @@ func openInsightDB(path string) (*sql.DB, error) {
 		findings TEXT NOT NULL DEFAULT '[]'
 	);
 	CREATE INDEX IF NOT EXISTS idx_insights_created_at ON insights(created_at);
-	CREATE INDEX IF NOT EXISTS idx_insights_status ON insights(status, created_at);`
+	CREATE INDEX IF NOT EXISTS idx_insights_status ON insights(status, created_at);
+	CREATE TABLE IF NOT EXISTS settings (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		updated_at TEXT NOT NULL,
+		ciphertext BLOB NOT NULL
+	);`
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
@@ -287,6 +305,117 @@ func (s *Store) queryInsights(q HistoryQuery) ([]Insight, error) {
 		out = append(out, insight)
 	}
 	return out, rows.Err()
+}
+
+// persistedSettings is the on-disk (encrypted) form of Settings: JSON-
+// friendly field types (ReviewInterval as a string) so it round-trips
+// through SQLite cleanly.
+type persistedSettings struct {
+	Provider       string            `json:"provider"`
+	Model          string            `json:"model"`
+	OllamaHost     string            `json:"ollamaHost"`
+	APIKeys        map[string]string `json:"apiKeys"`
+	ReviewInterval string            `json:"reviewInterval"`
+	MonitorEnabled bool              `json:"monitorEnabled"`
+
+	NotificationsEnabled bool   `json:"notificationsEnabled"`
+	DiscordWebhook       string `json:"discordWebhook"`
+	SlackWebhook         string `json:"slackWebhook"`
+	TeamsWebhook         string `json:"teamsWebhook"`
+	NotifyMinSeverity    string `json:"notifyMinSeverity"`
+
+	PrometheusURL string `json:"prometheusUrl"`
+}
+
+func toPersistedSettings(s Settings) persistedSettings {
+	return persistedSettings{
+		Provider: s.Provider, Model: s.Model, OllamaHost: s.OllamaHost,
+		APIKeys: cloneKeys(s.APIKeys), ReviewInterval: s.ReviewInterval.String(),
+		MonitorEnabled: s.MonitorEnabled,
+
+		NotificationsEnabled: s.NotificationsEnabled,
+		DiscordWebhook:       s.DiscordWebhook,
+		SlackWebhook:         s.SlackWebhook,
+		TeamsWebhook:         s.TeamsWebhook,
+		NotifyMinSeverity:    s.NotifyMinSeverity,
+
+		PrometheusURL: s.PrometheusURL,
+	}
+}
+
+func (p persistedSettings) toSettings() (Settings, error) {
+	interval, err := time.ParseDuration(p.ReviewInterval)
+	if err != nil {
+		return Settings{}, fmt.Errorf("persisted reviewInterval %q is invalid: %w", p.ReviewInterval, err)
+	}
+	return Settings{
+		Provider: p.Provider, Model: p.Model, OllamaHost: p.OllamaHost,
+		APIKeys: cloneKeys(p.APIKeys), ReviewInterval: interval, MonitorEnabled: p.MonitorEnabled,
+
+		NotificationsEnabled: p.NotificationsEnabled,
+		DiscordWebhook:       p.DiscordWebhook,
+		SlackWebhook:         p.SlackWebhook,
+		TeamsWebhook:         p.TeamsWebhook,
+		NotifyMinSeverity:    p.NotifyMinSeverity,
+
+		PrometheusURL: p.PrometheusURL,
+	}, nil
+}
+
+// SaveSettings persists settings as a single encrypted row, replacing
+// whatever was there before. A no-op when persistence isn't available —
+// consistent with Add(), a failure here must never break the caller.
+func (s *Store) SaveSettings(settings Settings) {
+	if !s.SettingsPersistent() {
+		return
+	}
+	payload, err := json.Marshal(toPersistedSettings(settings))
+	if err != nil {
+		s.log.Error("encoding settings failed", "error", err)
+		return
+	}
+	ciphertext, err := encryptSettings(s.settingsKey, payload)
+	if err != nil {
+		s.log.Error("encrypting settings failed", "error", err)
+		return
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO settings (id, updated_at, ciphertext) VALUES (1, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, ciphertext = excluded.ciphertext`,
+		time.Now().UTC().Format(time.RFC3339Nano), ciphertext,
+	)
+	if err != nil {
+		s.log.Error("persisting settings failed", "error", err)
+	}
+}
+
+// LoadSettings returns the persisted settings, or ok=false if none have
+// been saved yet (or persistence isn't available).
+func (s *Store) LoadSettings() (settings Settings, ok bool, err error) {
+	if !s.SettingsPersistent() {
+		return Settings{}, false, nil
+	}
+	var ciphertext []byte
+	err = s.db.QueryRow(`SELECT ciphertext FROM settings WHERE id = 1`).Scan(&ciphertext)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Settings{}, false, nil
+	}
+	if err != nil {
+		return Settings{}, false, fmt.Errorf("querying settings: %w", err)
+	}
+	plaintext, err := decryptSettings(s.settingsKey, ciphertext)
+	if err != nil {
+		return Settings{}, false, fmt.Errorf("decrypting settings: %w", err)
+	}
+	var persisted persistedSettings
+	if err := json.Unmarshal(plaintext, &persisted); err != nil {
+		return Settings{}, false, fmt.Errorf("decoding settings: %w", err)
+	}
+	settings, err = persisted.toSettings()
+	if err != nil {
+		return Settings{}, false, err
+	}
+	return settings, true, nil
 }
 
 func matchesQuery(insight Insight, q HistoryQuery) bool {

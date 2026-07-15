@@ -56,14 +56,6 @@ spec:
                 name: agent-config
             - secretRef:
                 name: agent-secrets
-            # Settings-UI overrides win: envFrom takes the last-listed source
-            # for any key defined in more than one.
-            - configMapRef:
-                name: agent-config-overrides
-                optional: true
-            - secretRef:
-                name: agent-secrets-overrides
-                optional: true
           volumeMounts:
             - name: data
               mountPath: /data

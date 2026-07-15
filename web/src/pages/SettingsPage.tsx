@@ -49,7 +49,7 @@ export default function SettingsPage() {
       {configQuery.data && (
         <AgentSettingsForm
           config={configQuery.data}
-          persistHint={serverQuery.data?.settingsPersist ?? false}
+          persistHint={configQuery.data.persistent}
           onSaved={() => {
             queryClient.invalidateQueries({ queryKey: ["agent-config"] });
             queryClient.invalidateQueries({ queryKey: ["agent-status"] });
@@ -113,11 +113,9 @@ function AgentSettingsForm({
         teamsWebhookUrl: "",
       }));
       setSavedNote(
-        result.persisted
+        result.persistent
           ? "Applied and persisted — the settings survive pod restarts."
-          : result.persistError
-            ? `Applied live, but persisting failed: ${result.persistError}`
-            : "Applied live. (Running outside Kubernetes: settings reset to env values on restart.)",
+          : "Applied live. (No persistent storage available: settings reset to deployment defaults on restart.)",
       );
       onSaved();
       setTimeout(() => setSavedNote(""), 8000);
@@ -145,7 +143,7 @@ function AgentSettingsForm({
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">AI Agent</h2>
         <span className="text-xs text-slate-400">
-          changes apply immediately{persistHint ? " and persist to the ConfigMap" : ""}
+          changes apply immediately{persistHint ? " and persist across restarts" : ""}
         </span>
       </div>
 
@@ -501,7 +499,6 @@ function ServerInfoCard({ settings }: { settings: ServerSettings }) {
         <InfoItem label="Running mode" value={settings.inCluster ? `in-cluster (${settings.namespace})` : "outside Kubernetes"} />
         <InfoItem label="Agent URL" value={settings.agentUrl} />
         <InfoItem label="Static dir" value={settings.staticDir || "(dev mode — Vite serves the UI)"} />
-        <InfoItem label="Settings persistence" value={settings.settingsPersist ? "ConfigMap write-back" : "runtime only"} />
       </dl>
       <p className="mt-3 text-xs text-slate-400">
         Server parameters (port, RBAC, agent URL) are deployment-level — change them in the

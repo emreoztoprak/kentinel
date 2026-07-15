@@ -55,6 +55,12 @@ type SettingsView struct {
 	NotifyMinSeverity    string `json:"notifyMinSeverity"`
 
 	PrometheusURL string `json:"prometheusUrl"`
+
+	// Persistent reports whether this settings state survives a pod
+	// restart (a working SQLite file + encryption key). false in Docker
+	// mode without INSIGHT_DB_PATH, or if the database/key couldn't be
+	// opened — the change still applies live either way.
+	Persistent bool `json:"persistent"`
 }
 
 // SettingsUpdate is the PUT /config payload. Secret fields are write-only:
@@ -78,6 +84,28 @@ type SettingsUpdate struct {
 	PrometheusURL string `json:"prometheusUrl"`
 }
 
+// SettingsSync is the PUT /config/sync payload: the authoritative current
+// state of the ConfigMap/Secret, pushed by the server's watcher. Unlike
+// SettingsUpdate, fields are NOT write-only — an empty webhook URL here
+// really does mean "no webhook", because the caller has read the actual
+// current value rather than working from the UI's masked view.
+type SettingsSync struct {
+	Provider       string            `json:"provider"`
+	Model          string            `json:"model"`
+	OllamaHost     string            `json:"ollamaHost"`
+	APIKeys        map[string]string `json:"apiKeys"`
+	ReviewInterval string            `json:"reviewInterval"`
+	MonitorEnabled bool              `json:"monitorEnabled"`
+
+	NotificationsEnabled bool   `json:"notificationsEnabled"`
+	DiscordWebhook       string `json:"discordWebhookUrl"`
+	SlackWebhook         string `json:"slackWebhookUrl"`
+	TeamsWebhook         string `json:"teamsWebhookUrl"`
+	NotifyMinSeverity    string `json:"notifyMinSeverity"`
+
+	PrometheusURL string `json:"prometheusUrl"`
+}
+
 // Runtime holds the agent's mutable configuration and the active LLM
 // provider. All access is through accessors so settings can change while
 // reviews and queries are running (in-flight calls keep the provider they
@@ -87,12 +115,17 @@ type Runtime struct {
 	settings Settings
 	provider llm.Provider
 	changed  chan struct{} // signals the monitor loop after Apply
+	store    *Store        // nil when settings persistence isn't available
 	log      *slog.Logger
 }
 
-// NewRuntime builds the runtime from boot config. Fails if the initial
-// provider cannot be constructed.
-func NewRuntime(cfg *config.Agent, log *slog.Logger) (*Runtime, error) {
+// NewRuntime builds the runtime from boot config (deployment defaults), then
+// overlays any settings previously saved to store — from a UI save or a
+// ConfigMap/Secret sync — so the last-written state always wins, exactly as
+// it did before this restart. store may be nil (Docker mode without
+// persistence); NewRuntime falls back to cfg alone in that case. Fails only
+// if neither the persisted nor the deployment-default provider can be built.
+func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, error) {
 	settings := Settings{
 		Provider:       cfg.Provider,
 		Model:          cfg.Model,
@@ -112,6 +145,24 @@ func NewRuntime(cfg *config.Agent, log *slog.Logger) (*Runtime, error) {
 	if settings.Model == "" {
 		settings.Model = DefaultModel(settings.Provider)
 	}
+
+	if store != nil {
+		if persisted, ok, err := store.LoadSettings(); err != nil {
+			log.Warn("loading persisted settings failed; using deployment defaults", "error", err)
+		} else if ok {
+			// Validate before committing to the persisted state: a stale or
+			// corrupted saved value (e.g. a since-revoked provider key)
+			// must never keep the agent from booting — same principle as
+			// the store's own persistence failures being non-fatal.
+			if _, err := buildProvider(persisted); err != nil {
+				log.Warn("persisted settings are invalid; using deployment defaults", "error", err)
+			} else {
+				settings = persisted
+				log.Info("restored settings from database", "provider", settings.Provider, "model", settings.Model)
+			}
+		}
+	}
+
 	provider, err := buildProvider(settings)
 	if err != nil {
 		return nil, err
@@ -120,6 +171,7 @@ func NewRuntime(cfg *config.Agent, log *slog.Logger) (*Runtime, error) {
 		settings: settings,
 		provider: provider,
 		changed:  make(chan struct{}, 1),
+		store:    store,
 		log:      log,
 	}, nil
 }
@@ -156,6 +208,7 @@ func (r *Runtime) View() SettingsView {
 		NotifyMinSeverity:    r.settings.NotifyMinSeverity,
 
 		PrometheusURL: r.settings.PrometheusURL,
+		Persistent:    r.store != nil && r.store.SettingsPersistent(),
 	}
 }
 
@@ -222,6 +275,10 @@ func (r *Runtime) Apply(update SettingsUpdate) (SettingsView, error) {
 	r.provider = provider
 	r.mu.Unlock()
 
+	if r.store != nil {
+		r.store.SaveSettings(next)
+	}
+
 	r.log.Info("settings updated",
 		"provider", next.Provider, "model", next.Model,
 		"interval", next.ReviewInterval.String(), "monitor", next.MonitorEnabled)
@@ -229,6 +286,67 @@ func (r *Runtime) Apply(update SettingsUpdate) (SettingsView, error) {
 	select {
 	case r.changed <- struct{}{}:
 	default: // a signal is already pending
+	}
+	return r.View(), nil
+}
+
+// toSettings converts the wire payload to Settings, parsing the interval.
+func (sy SettingsSync) toSettings() (Settings, error) {
+	interval, err := time.ParseDuration(sy.ReviewInterval)
+	if err != nil {
+		return Settings{}, fmt.Errorf("reviewInterval %q is not a valid duration (e.g. \"5m\", \"90s\")", sy.ReviewInterval)
+	}
+	return Settings{
+		Provider: sy.Provider, Model: sy.Model, OllamaHost: sy.OllamaHost,
+		APIKeys: cloneKeys(sy.APIKeys), ReviewInterval: interval, MonitorEnabled: sy.MonitorEnabled,
+
+		NotificationsEnabled: sy.NotificationsEnabled,
+		DiscordWebhook:       sy.DiscordWebhook,
+		SlackWebhook:         sy.SlackWebhook,
+		TeamsWebhook:         sy.TeamsWebhook,
+		NotifyMinSeverity:    sy.NotifyMinSeverity,
+
+		PrometheusURL: sy.PrometheusURL,
+	}, nil
+}
+
+// Sync replaces settings wholesale from an authoritative source — the
+// server's ConfigMap/Secret watcher, which has read the true current values
+// directly. Unlike Apply, there are no write-only "empty means keep the
+// existing value" semantics here: an empty field really does mean "unset",
+// so a Helm upgrade that removes a webhook actually removes it.
+func (r *Runtime) Sync(next Settings) (SettingsView, error) {
+	if next.Model == "" {
+		next.Model = DefaultModel(next.Provider)
+	}
+	if next.NotifyMinSeverity == "" {
+		next.NotifyMinSeverity = "warning"
+	}
+	if err := validateSettings(next); err != nil {
+		return SettingsView{}, err
+	}
+
+	provider, err := buildProvider(next)
+	if err != nil {
+		return SettingsView{}, err
+	}
+
+	r.mu.Lock()
+	r.settings = next
+	r.provider = provider
+	r.mu.Unlock()
+
+	if r.store != nil {
+		r.store.SaveSettings(next)
+	}
+
+	r.log.Info("settings synced from ConfigMap/Secret",
+		"provider", next.Provider, "model", next.Model,
+		"interval", next.ReviewInterval.String(), "monitor", next.MonitorEnabled)
+
+	select {
+	case r.changed <- struct{}{}:
+	default:
 	}
 	return r.View(), nil
 }
@@ -244,45 +362,6 @@ func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
 	interval, err := time.ParseDuration(update.ReviewInterval)
 	if err != nil {
 		return Settings{}, fmt.Errorf("reviewInterval %q is not a valid duration (e.g. \"5m\", \"90s\")", update.ReviewInterval)
-	}
-	if interval < 30*time.Second {
-		return Settings{}, fmt.Errorf("reviewInterval %s is too short (minimum 30s)", interval)
-	}
-
-	// Provider + key validation.
-	switch {
-	case update.Provider == "ollama":
-		if update.OllamaHost == "" {
-			return Settings{}, fmt.Errorf("provider \"ollama\" requires ollamaHost")
-		}
-	case isCloudProvider(update.Provider):
-		if update.APIKey == "" && next.APIKeys[update.Provider] == "" {
-			return Settings{}, fmt.Errorf("provider %q requires an API key (none is configured yet)", update.Provider)
-		}
-	default:
-		return Settings{}, fmt.Errorf("unsupported provider %q (expected one of: ollama, %s)", update.Provider, strings.Join(CloudProviders, ", "))
-	}
-
-	// Notification validation.
-	if update.DiscordWebhook != "" && !isDiscordWebhook(update.DiscordWebhook) {
-		return Settings{}, fmt.Errorf("discordWebhookUrl must be a Discord webhook URL (https://discord.com/api/webhooks/...)")
-	}
-	if update.SlackWebhook != "" && !strings.HasPrefix(update.SlackWebhook, "https://hooks.slack.com/") {
-		return Settings{}, fmt.Errorf("slackWebhookUrl must be a Slack incoming-webhook URL (https://hooks.slack.com/...)")
-	}
-	if update.TeamsWebhook != "" && !strings.HasPrefix(update.TeamsWebhook, "https://") {
-		return Settings{}, fmt.Errorf("teamsWebhookUrl must be an https URL")
-	}
-	switch update.NotifyMinSeverity {
-	case "", "warning", "critical":
-	default:
-		return Settings{}, fmt.Errorf("notifyMinSeverity %q is invalid (expected \"warning\" or \"critical\")", update.NotifyMinSeverity)
-	}
-
-	if update.PrometheusURL != "" &&
-		!strings.HasPrefix(update.PrometheusURL, "http://") &&
-		!strings.HasPrefix(update.PrometheusURL, "https://") {
-		return Settings{}, fmt.Errorf("prometheusUrl must be an http(s) URL (or empty to disable metrics)")
 	}
 
 	// Merge.
@@ -308,10 +387,6 @@ func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
 	if next.NotifyMinSeverity == "" {
 		next.NotifyMinSeverity = "warning"
 	}
-	if update.NotificationsEnabled &&
-		next.DiscordWebhook == "" && next.SlackWebhook == "" && next.TeamsWebhook == "" {
-		return Settings{}, fmt.Errorf("enabling notifications requires at least one webhook URL (Discord, Slack, or Teams)")
-	}
 
 	next.PrometheusURL = strings.TrimRight(update.PrometheusURL, "/")
 
@@ -319,7 +394,57 @@ func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
 	if next.Model == "" {
 		next.Model = DefaultModel(update.Provider)
 	}
+
+	if err := validateSettings(next); err != nil {
+		return Settings{}, err
+	}
 	return next, nil
+}
+
+// validateSettings checks a fully-merged settings value, shared by both
+// Apply (UI, write-only merge) and Sync (authoritative replace) so the two
+// paths can never drift out of agreement on what's valid.
+func validateSettings(s Settings) error {
+	if s.ReviewInterval < 30*time.Second {
+		return fmt.Errorf("reviewInterval %s is too short (minimum 30s)", s.ReviewInterval)
+	}
+
+	switch {
+	case s.Provider == "ollama":
+		if s.OllamaHost == "" {
+			return fmt.Errorf("provider \"ollama\" requires ollamaHost")
+		}
+	case isCloudProvider(s.Provider):
+		if s.APIKeys[s.Provider] == "" {
+			return fmt.Errorf("provider %q requires an API key (none is configured yet)", s.Provider)
+		}
+	default:
+		return fmt.Errorf("unsupported provider %q (expected one of: ollama, %s)", s.Provider, strings.Join(CloudProviders, ", "))
+	}
+
+	if s.DiscordWebhook != "" && !isDiscordWebhook(s.DiscordWebhook) {
+		return fmt.Errorf("discordWebhookUrl must be a Discord webhook URL (https://discord.com/api/webhooks/...)")
+	}
+	if s.SlackWebhook != "" && !strings.HasPrefix(s.SlackWebhook, "https://hooks.slack.com/") {
+		return fmt.Errorf("slackWebhookUrl must be a Slack incoming-webhook URL (https://hooks.slack.com/...)")
+	}
+	if s.TeamsWebhook != "" && !strings.HasPrefix(s.TeamsWebhook, "https://") {
+		return fmt.Errorf("teamsWebhookUrl must be an https URL")
+	}
+	switch s.NotifyMinSeverity {
+	case "warning", "critical":
+	default:
+		return fmt.Errorf("notifyMinSeverity %q is invalid (expected \"warning\" or \"critical\")", s.NotifyMinSeverity)
+	}
+	if s.PrometheusURL != "" &&
+		!strings.HasPrefix(s.PrometheusURL, "http://") &&
+		!strings.HasPrefix(s.PrometheusURL, "https://") {
+		return fmt.Errorf("prometheusUrl must be an http(s) URL (or empty to disable metrics)")
+	}
+	if s.NotificationsEnabled && s.DiscordWebhook == "" && s.SlackWebhook == "" && s.TeamsWebhook == "" {
+		return fmt.Errorf("enabling notifications requires at least one webhook URL (Discord, Slack, or Teams)")
+	}
+	return nil
 }
 
 // DefaultModel returns the default model ID for a provider.

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"log/slog"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func testRuntime(t *testing.T) *Runtime {
 		OllamaHost:     "http://localhost:11434",
 		ReviewInterval: 5 * time.Minute,
 		MonitorEnabled: true,
-	}, slog.Default())
+	}, nil, slog.Default())
 	if err != nil {
 		t.Fatalf("NewRuntime failed: %v", err)
 	}
@@ -71,11 +72,11 @@ func TestApplyFillsProviderDefaultModel(t *testing.T) {
 func TestApplyRejectsInvalidUpdates(t *testing.T) {
 	rt := testRuntime(t)
 	cases := []SettingsUpdate{
-		{Provider: "openai", OllamaHost: "x", ReviewInterval: "5m"},                 // unknown provider
-		{Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "5s"},          // too short
-		{Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "not-a-time"},  // bad duration
-		{Provider: "ollama", OllamaHost: "", ReviewInterval: "5m"},                  // missing host
-		{Provider: "anthropic", ReviewInterval: "5m"},                               // no key configured
+		{Provider: "openai", OllamaHost: "x", ReviewInterval: "5m"},                // unknown provider
+		{Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "5s"},         // too short
+		{Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "not-a-time"}, // bad duration
+		{Provider: "ollama", OllamaHost: "", ReviewInterval: "5m"},                 // missing host
+		{Provider: "anthropic", ReviewInterval: "5m"},                              // no key configured
 	}
 	for i, update := range cases {
 		if _, err := rt.Apply(update); err == nil {
@@ -153,5 +154,148 @@ func TestDeepseekAndGeminiProviders(t *testing.T) {
 		if rt.Provider().Name() != provider {
 			t.Errorf("provider name = %s, want %s", rt.Provider().Name(), provider)
 		}
+	}
+}
+
+func baseConfig() *config.Agent {
+	return &config.Agent{
+		Provider:       "ollama",
+		Model:          "qwen3",
+		OllamaHost:     "http://localhost:11434",
+		ReviewInterval: 5 * time.Minute,
+		MonitorEnabled: true,
+	}
+}
+
+// TestApplyPersistsAndRestoresAcrossRestart verifies the whole point of the
+// settings store: a saved change outlives the process, and the next
+// Runtime built against the same database restores it instead of falling
+// back to deployment defaults.
+func TestApplyPersistsAndRestoresAcrossRestart(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	store := NewPersistentStore(dbPath, 90, 20, slog.Default())
+	if !store.SettingsPersistent() {
+		t.Fatal("expected settings persistence to be available")
+	}
+
+	rt, err := NewRuntime(baseConfig(), store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime failed: %v", err)
+	}
+	view, err := rt.Apply(SettingsUpdate{
+		Provider: "anthropic", OllamaHost: "http://x", ReviewInterval: "15m",
+		APIKey: "sk-ant-test", MonitorEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+	if !view.Persistent {
+		t.Error("view.Persistent should be true with a working store")
+	}
+
+	// A fresh Runtime against the SAME store simulates a pod restart: the
+	// persisted settings must win over the (unrelated) deployment defaults
+	// passed via cfg.
+	restarted, err := NewRuntime(baseConfig(), store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime (restart) failed: %v", err)
+	}
+	got := restarted.View()
+	if got.Provider != "anthropic" || got.ReviewInterval != "15m0s" || got.MonitorEnabled {
+		t.Errorf("settings did not survive restart: %+v", got)
+	}
+	if !got.APIKeysSet["anthropic"] {
+		t.Error("anthropic API key did not survive restart")
+	}
+	if restarted.Provider().Name() != "anthropic" {
+		t.Errorf("restored provider = %s, want anthropic", restarted.Provider().Name())
+	}
+}
+
+// TestNewRuntimeFallsBackWhenPersistedSettingsAreInvalid confirms a stale
+// or corrupted saved value never keeps the agent from booting — it must
+// fall back to the deployment defaults instead of failing NewRuntime.
+func TestNewRuntimeFallsBackWhenPersistedSettingsAreInvalid(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	store := NewPersistentStore(dbPath, 90, 20, slog.Default())
+
+	// Save a provider that requires a key it doesn't have — buildProvider
+	// will reject it, simulating a stale/corrupted persisted value.
+	store.SaveSettings(Settings{
+		Provider: "anthropic", Model: "claude-opus-4-8",
+		ReviewInterval: 5 * time.Minute, MonitorEnabled: true,
+		NotifyMinSeverity: "warning",
+	})
+
+	rt, err := NewRuntime(baseConfig(), store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime should fall back to deployment defaults, not fail: %v", err)
+	}
+	if rt.View().Provider != "ollama" {
+		t.Errorf("provider = %q, want fallback to deployment default \"ollama\"", rt.View().Provider)
+	}
+}
+
+// TestSyncIsAuthoritative verifies Sync's key difference from Apply: an
+// empty field really does clear a previously-set value, matching a
+// Kubernetes ConfigMap/Secret's actual current (not write-only) contents.
+func TestSyncIsAuthoritative(t *testing.T) {
+	rt := testRuntime(t)
+
+	if _, err := rt.Apply(SettingsUpdate{
+		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "5m",
+		MonitorEnabled: true, NotificationsEnabled: true,
+		SlackWebhook: "https://hooks.slack.com/services/T/B/x",
+	}); err != nil {
+		t.Fatalf("seeding webhook via Apply failed: %v", err)
+	}
+	if !rt.View().SlackWebhookSet {
+		t.Fatal("webhook was not set by Apply")
+	}
+
+	// Sync with an empty SlackWebhook and NotificationsEnabled=false must
+	// actually clear it — this is exactly what happens when a `helm
+	// upgrade` removes a previously-set webhook from the Secret.
+	view, err := rt.Sync(Settings{
+		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: 5 * time.Minute,
+		MonitorEnabled: true, NotifyMinSeverity: "warning",
+	})
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+	if view.SlackWebhookSet {
+		t.Error("Sync should have cleared the webhook, Apply's write-only semantics must not apply")
+	}
+	if view.NotificationsEnabled {
+		t.Error("Sync should have disabled notifications")
+	}
+}
+
+// TestSyncDefaultsEmptyNotifyMinSeverity mirrors merge()'s behavior: a
+// ConfigMap missing NOTIFY_MIN_SEVERITY (empty string) must default to
+// "warning" rather than fail validation.
+func TestSyncDefaultsEmptyNotifyMinSeverity(t *testing.T) {
+	rt := testRuntime(t)
+	view, err := rt.Sync(Settings{
+		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: 5 * time.Minute,
+		MonitorEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+	if view.NotifyMinSeverity != "warning" {
+		t.Errorf("NotifyMinSeverity = %q, want default \"warning\"", view.NotifyMinSeverity)
+	}
+}
+
+// TestSyncRejectsInvalidSettings confirms Sync shares validateSettings with
+// Apply rather than skipping validation for an "authoritative" source.
+func TestSyncRejectsInvalidSettings(t *testing.T) {
+	rt := testRuntime(t)
+	_, err := rt.Sync(Settings{
+		Provider: "ollama", OllamaHost: "", ReviewInterval: 5 * time.Minute, MonitorEnabled: true,
+	})
+	if err == nil {
+		t.Fatal("Sync with a missing ollamaHost should fail validation")
 	}
 }

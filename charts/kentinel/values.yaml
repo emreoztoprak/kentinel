@@ -15,7 +15,8 @@ llm:
   # Empty = provider default (the bundled Ollama uses a small model; see ollama.model)
   model: "qwen3:0.6b"
   # API keys for cloud providers. Also settable later from the Settings UI
-  # (stored write-only, persisted to the chart's Secret).
+  # (stored write-only, persisted encrypted to the agent's own database —
+  # see docs/security.md).
   apiKeys:
     anthropic: ""
     openai: ""

@@ -49,24 +49,39 @@ With `LLM_PROVIDER=ollama`, nothing leaves your infrastructure.
 
 ## Secret handling
 
-- The agent's ClusterRole excludes `secrets` entirely.
+- The agent's ClusterRole excludes `secrets` entirely — the ConfigMap/Secret
+  watcher that syncs `helm upgrade`/`kubectl edit` changes (below) runs in
+  the **server**, which already has legitimate Secret read access for the
+  resource browser; the agent itself never gains that permission.
 - LLM API keys and notification webhooks can be set from the Settings page
   but are **write-only**: `GET /api/v1/agent/config` only ever reports
-  set/not-set booleans. The agent holds the values in memory; in k8s mode
-  the **server** (not the agent) persists newly entered values into the
-  `agent-secrets-overrides` Secret — a separate object from the one below,
-  so a value saved from the UI is never clobbered by a `helm upgrade` or
-  `kubectl apply` (see [deployment.md](deployment.md)).
-  Remember the flip side: since the UI has no auth, anyone who can reach it
-  can *replace* the key or redirect the agent to their own Ollama host — one
-  more reason to keep this behind `kubectl port-forward`.
-- The `agent-secrets` Secret holds the install-time LLM API keys and webhook
-  URLs (chart/manifest defaults); replace the committed `REPLACE_ME`
-  placeholders out-of-band and never commit real values. Anything set later
-  from the Settings UI lands in `agent-secrets-overrides` instead and takes
-  precedence.
-- The UI's Secret YAML view shows base64 data as stored — treat UI access as
-  secret access when deciding who may reach the port.
+  set/not-set booleans, and the raw values never appear in any UI or API
+  response.
+- A value saved from the Settings UI is persisted by the **agent itself**
+  to a `settings` table in its own SQLite file (the same one review history
+  lives in) — **encrypted with AES-256-GCM**, not stored as plaintext or
+  base64. The encryption key is a random 32 bytes generated on first boot
+  and kept as a sibling file next to the database (mode `0600`), on the
+  same PVC — nothing new to mount, no separate Kubernetes Secret to manage.
+  A consequence worth knowing: a value set from the UI never appears in any
+  Kubernetes object at all, so it's outside the resource browser's reach
+  entirely, unlike the `agent-secrets` Secret described next.
+- The `agent-secrets` Secret (and `agent-config` ConfigMap) hold whatever
+  was declared at install time via Helm values / `--set` / the raw
+  manifests — replace the committed `REPLACE_ME` placeholders out-of-band
+  and never commit real values. The **server polls these objects** (every
+  30s) and pushes any change to the agent, so a value set here later (e.g.
+  a fresh `helm upgrade --set`) becomes current too — whichever of the
+  Settings UI or a Kubernetes-side change happened most recently wins, no
+  per-field tracking (see [deployment.md](deployment.md)).
+  Remember the flip side of write access from the UI: since it has no
+  auth, anyone who can reach it can *replace* the key or redirect the
+  agent to their own Ollama host — one more reason to keep this behind
+  `kubectl port-forward`.
+- The UI's Secret YAML view shows base64 data as stored, for **any** Secret
+  in the cluster — treat UI access as secret access when deciding who may
+  reach the port. This does *not* apply to values set via the Settings UI
+  (see above), which never reach a Kubernetes Secret at all.
 
 ## Hardening already in place
 
@@ -81,6 +96,9 @@ With `LLM_PROVIDER=ollama`, nothing leaves your infrastructure.
   your local Kentinel instance (cross-site WebSocket hijacking) — this is a
   best-effort layer, not a substitute for keeping the port off shared
   networks.
+- Settings saved from the UI (API keys, webhook URLs) are encrypted at rest
+  in the agent's local database, never stored as plaintext or base64 — see
+  Secret handling above.
 
 ## Reporting
 

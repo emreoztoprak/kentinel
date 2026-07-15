@@ -38,19 +38,20 @@ func run() error {
 		return fmt.Errorf("connecting to kubernetes: %w (is a kubeconfig available, or are we running in-cluster?)", err)
 	}
 
-	runtime, err := agent.NewRuntime(cfg, log)
-	if err != nil {
-		return fmt.Errorf("configuring LLM provider: %w", err)
-	}
-	log.Info("llm provider configured", "provider", runtime.Provider().Name(), "model", runtime.Provider().Model())
-
 	var store *agent.Store
 	if cfg.InsightDBPath != "" {
 		store = agent.NewPersistentStore(cfg.InsightDBPath, cfg.InsightRetentionDays, 20, log)
 	} else {
 		store = agent.NewStore(20)
-		log.Info("insight history is in-memory only (set INSIGHT_DB_PATH to persist across restarts)")
+		log.Info("insight history and settings are in-memory only (set INSIGHT_DB_PATH to persist across restarts)")
 	}
+
+	runtime, err := agent.NewRuntime(cfg, store, log)
+	if err != nil {
+		return fmt.Errorf("configuring LLM provider: %w", err)
+	}
+	log.Info("llm provider configured", "provider", runtime.Provider().Name(), "model", runtime.Provider().Model())
+
 	queryEngine := agent.NewQueryEngine(client, runtime, log)
 	notifier := agent.NewDispatcher(runtime, log)
 	api := agent.NewAPI(store, queryEngine, runtime, notifier, log)

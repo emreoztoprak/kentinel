@@ -221,10 +221,13 @@ Where the tokens go:
 - **Queries cost per use**; a typical "analyze these logs" question runs 2–6
   LLM calls with a few KB of tool results each.
 
-Every cost lever is an environment variable on the agent — no code changes or
-rebuilds, just update the config (k8s: the `agent-config` ConfigMap, or
-`agent-config-overrides` if you've set the same field from the Settings UI —
-overrides win; Docker: compose environment) and restart the agent:
+Every cost lever is an environment variable on the agent — no code changes,
+rebuilds, or pod restart needed. Easiest: the Settings page. In k8s mode you
+can also edit the `agent-config` ConfigMap directly (`kubectl patch` or
+`helm upgrade --set`); the server notices within 30s and pushes it to the
+agent live. If you've also changed the same field from the Settings UI,
+whichever you touched most recently is what's running (see
+[security.md](security.md)).
 
 | Lever | Effect on cost |
 | --- | --- |
@@ -239,5 +242,5 @@ review:
 ```sh
 kubectl -n kentinel patch configmap agent-config --type merge \
   -p '{"data":{"AGENT_REVIEW_INTERVAL":"15m"}}'
-kubectl -n kentinel rollout restart deploy/agent
+# no rollout restart needed — the server syncs this to the agent within 30s
 ```

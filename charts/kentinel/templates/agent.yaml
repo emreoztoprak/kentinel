@@ -56,14 +56,6 @@ spec:
                 name: {{ .Release.Name }}-agent-config
             - secretRef:
                 name: {{ .Release.Name }}-agent-secrets
-            # Settings-UI overrides win: envFrom takes the last-listed source
-            # for any key defined in more than one.
-            - configMapRef:
-                name: {{ .Release.Name }}-agent-config-overrides
-                optional: true
-            - secretRef:
-                name: {{ .Release.Name }}-agent-secrets-overrides
-                optional: true
           {{- if .Values.agent.persistence.enabled }}
           volumeMounts:
             - name: data

@@ -56,10 +56,8 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/settings", s.handleServerSettings)
 
-		// Settings updates take a dedicated route (live-apply on the agent,
-		// then persist to the ConfigMap); everything else under /agent is
-		// proxied to the agent service.
-		r.Put("/agent/config", s.handleAgentConfigUpdate)
+		// Everything under /agent, including settings updates, is proxied
+		// straight to the agent service — it owns validation and persistence.
 		r.Handle("/agent/*", s.agentProxy())
 	})
 

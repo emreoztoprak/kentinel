@@ -69,8 +69,9 @@ prefix stripped.
 | `GET /api/v1/agent/insights/timeline?hours=24` | Compact trend points `[{t, status}]`, oldest first, max 168h |
 | `POST /api/v1/agent/query` | Body `{"prompt":"..."}` (max 8000 chars). **SSE** response |
 | `GET /api/v1/agent/config` | Runtime agent settings. The API key is reduced to `anthropicKeySet: bool` — never returned |
-| `PUT /api/v1/agent/config` | Update settings (see below). Live-applies on the agent, then persists to the ConfigMap/Secret in k8s mode |
-| `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`, `settingsPersist`) |
+| `PUT /api/v1/agent/config` | Update settings (see below). Live-applies on the agent, then persists encrypted to the agent's own database |
+| `PUT /api/v1/agent/config/sync` | Authoritative replace, used by the server's ConfigMap/Secret watcher — not the write-only semantics of `PUT /config` above. Not intended for the UI |
+| `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`) |
 | `GET /api/v1/agent/models?provider=&host=` | Selectable models: installed Ollama models or the curated Claude list |
 | `POST /api/v1/agent/notifications/test` | Send a test notification to every configured webhook (Discord/Slack/Teams) |
 | `GET /api/v1/agent/metrics/health` | Check Prometheus connectivity (400 = not configured, 502 = unreachable) |
@@ -98,7 +99,9 @@ prefix stripped.
 `apiKeysSet: {"anthropic": true, "openai": false, ...}` and webhooks as
 `discordWebhookSet` / `slackWebhookSet` / `teamsWebhookSet` booleans.
 
-Response: `{"config": {...new settings...}, "persisted": bool, "persistError": ""}`.
+Response: the new settings view, same shape as `GET /config`, plus
+`"persistent": bool` — whether this state survives a pod restart (a working
+database + encryption key; false in Docker mode without `INSIGHT_DB_PATH`).
 Validation errors (bad interval, missing key for anthropic, unknown provider)
 return 400 with the agent's message; nothing is changed in that case.
 

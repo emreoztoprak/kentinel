@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -148,5 +150,131 @@ func TestMemoryStoreHistoryFilters(t *testing.T) {
 	}
 	if store.Persistent() {
 		t.Error("memory store must not report persistent")
+	}
+}
+
+func sampleSettings() Settings {
+	return Settings{
+		Provider:       "anthropic",
+		Model:          "claude-opus-4-8",
+		OllamaHost:     "http://ollama:11434",
+		APIKeys:        map[string]string{"anthropic": "sk-ant-super-secret"},
+		ReviewInterval: 10 * time.Minute,
+		MonitorEnabled: true,
+		SlackWebhook:   "https://hooks.slack.com/services/T/B/secret-path",
+	}
+}
+
+func TestSettingsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.db")
+	store := NewPersistentStore(path, 90, 20, discardLog())
+	if !store.SettingsPersistent() {
+		t.Fatal("settings should be persistent")
+	}
+
+	if _, ok, err := store.LoadSettings(); err != nil || ok {
+		t.Fatalf("LoadSettings on empty store: ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+
+	want := sampleSettings()
+	store.SaveSettings(want)
+
+	got, ok, err := store.LoadSettings()
+	if err != nil || !ok {
+		t.Fatalf("LoadSettings failed: ok=%v err=%v", ok, err)
+	}
+	if got.Provider != want.Provider || got.Model != want.Model ||
+		got.ReviewInterval != want.ReviewInterval || got.APIKeys["anthropic"] != want.APIKeys["anthropic"] ||
+		got.SlackWebhook != want.SlackWebhook {
+		t.Fatalf("round-tripped settings = %+v, want %+v", got, want)
+	}
+
+	// Saving again must replace, not append (single row, upsert).
+	want.Model = "claude-sonnet-5"
+	store.SaveSettings(want)
+	got, _, err = store.LoadSettings()
+	if err != nil || got.Model != "claude-sonnet-5" {
+		t.Fatalf("second save did not replace: got=%+v err=%v", got, err)
+	}
+}
+
+// TestSettingsAreNotStoredAsPlaintext is the concrete regression test for
+// "tokens/secrets must not be plaintext at rest": it reads the raw SQLite
+// file bytes directly (bypassing the driver, the same way an attacker with
+// PVC file access would) and confirms the API key and webhook URL never
+// appear verbatim.
+func TestSettingsAreNotStoredAsPlaintext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.db")
+	store := NewPersistentStore(path, 90, 20, discardLog())
+	if !store.SettingsPersistent() {
+		t.Fatal("settings should be persistent")
+	}
+	secret := sampleSettings()
+	store.SaveSettings(secret)
+
+	// Force a WAL checkpoint so the data is actually in the main file, not
+	// just the -wal sidecar, before reading raw bytes back.
+	if _, err := store.db.Exec("PRAGMA wal_checkpoint(TRUNCATE);"); err != nil {
+		t.Fatalf("checkpoint failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading raw db file: %v", err)
+	}
+	for _, needle := range []string{secret.APIKeys["anthropic"], secret.SlackWebhook} {
+		if bytes.Contains(raw, []byte(needle)) {
+			t.Errorf("raw database file contains plaintext secret %q", needle)
+		}
+	}
+
+	// The key file itself must exist, be restrictive, and be a sibling of
+	// the database (same volume, no extra mount needed).
+	keyPath := filepath.Join(filepath.Dir(path), ".settings.key")
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("settings key file missing: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("settings key file mode = %o, want 0600", perm)
+	}
+}
+
+// TestSettingsKeyReusedAcrossRestarts confirms a second Store pointed at
+// the same file can decrypt what the first one wrote — the key must be
+// loaded, not regenerated, on every boot.
+func TestSettingsKeyReusedAcrossRestarts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent.db")
+	first := NewPersistentStore(path, 90, 20, discardLog())
+	first.SaveSettings(sampleSettings())
+	if err := first.Close(); err != nil {
+		t.Fatalf("closing first store: %v", err)
+	}
+
+	second := NewPersistentStore(path, 90, 20, discardLog())
+	if !second.SettingsPersistent() {
+		t.Fatal("second store should also report settings persistent")
+	}
+	got, ok, err := second.LoadSettings()
+	if err != nil || !ok {
+		t.Fatalf("second store could not decrypt settings written by the first: ok=%v err=%v", ok, err)
+	}
+	if got.APIKeys["anthropic"] != "sk-ant-super-secret" {
+		t.Fatalf("decrypted settings wrong after reopening: %+v", got)
+	}
+}
+
+// TestSettingsPersistentFalseWithoutKey confirms SaveSettings/LoadSettings
+// degrade gracefully (no panic, no error surfaced to the caller) when the
+// encryption key isn't available — mirrors how memory-only Store already
+// behaves for insights.
+func TestSettingsPersistentFalseWithoutKey(t *testing.T) {
+	s := NewStore(20) // memory-only: no db, no key
+	if s.SettingsPersistent() {
+		t.Fatal("memory-only store must not report settings persistent")
+	}
+	s.SaveSettings(sampleSettings()) // must not panic
+	if _, ok, err := s.LoadSettings(); err != nil || ok {
+		t.Fatalf("LoadSettings on memory-only store: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
 }

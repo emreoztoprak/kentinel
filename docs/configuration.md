@@ -14,15 +14,18 @@ How it works:
 
 - Changes **apply immediately** in the running agent — no pod restart, the
   insight history is kept, and a fresh review runs right away.
-- In **k8s mode** the server also writes the values back to the
-  `agent-config-overrides` ConfigMap (and a new API key into the
-  `agent-secrets-overrides` Secret), so they survive pod restarts. These are
-  separate objects from the chart/manifest-declared `agent-config` /
-  `agent-secrets` — a saved setting always wins and is never overwritten by
-  a subsequent `helm upgrade` or `kubectl apply`.
-- In **Docker / local mode** there is nothing to write back to — changes last
-  until the agent restarts, then env values apply again. The UI says which
-  case you're in after every save.
+- The agent also persists the change to a `settings` table in its own
+  SQLite file (the same one insight history uses), **encrypted** — not
+  plaintext or base64. This works identically in Docker and k8s mode, as
+  long as `INSIGHT_DB_PATH` points at a persistent volume (the default in
+  both `docker-compose.yml` and the Helm chart / raw manifests). No
+  volume, no key file, no persistence — the UI tells you which case you're
+  in (`persistent: true/false`) after every save.
+- In k8s mode, a saved setting always wins over the chart/manifest-declared
+  ConfigMap/Secret values — *until* those change too (`helm upgrade --set`,
+  `kubectl edit`), at which point that becomes current instead. Whichever
+  happened most recently is what's running; see
+  [security.md](security.md) for the mechanism.
 
 Server parameters (port, agent URL, RBAC) are deployment-level and remain
 read-only in the UI — change them in the manifests / compose file.
@@ -90,8 +93,8 @@ Notes:
 ### Cloud providers (Anthropic, OpenAI, DeepSeek, Gemini)
 
 All four work the same way — pick the provider, provide its API key
-(easiest: Settings page, which stores it write-only and persists it to the
-`agent-secrets-overrides` Secret in k8s mode), optionally pick a model from the
+(easiest: Settings page, which stores it write-only and persists it
+encrypted to the agent's own database), optionally pick a model from the
 dropdown:
 
 | Provider | Get a key at | Default model | Notes |
