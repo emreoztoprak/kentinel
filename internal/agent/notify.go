@@ -126,7 +126,7 @@ func (d *Dispatcher) SendTest(ctx context.Context) error {
 	}
 	return d.deliver(ctx, channels, Notification{
 		Status:  StatusWarning,
-		Summary: "This is a test notification from Kentinel. Your Discord webhook works!",
+		Summary: "This is a test notification from Kentinel. Your webhook works!",
 		Test:    true,
 		Findings: []Finding{{
 			Severity: "warning",

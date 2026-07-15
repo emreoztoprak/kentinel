@@ -72,7 +72,7 @@ prefix stripped.
 | `PUT /api/v1/agent/config` | Update settings (see below). Live-applies on the agent, then persists to the ConfigMap/Secret in k8s mode |
 | `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`, `settingsPersist`) |
 | `GET /api/v1/agent/models?provider=&host=` | Selectable models: installed Ollama models or the curated Claude list |
-| `POST /api/v1/agent/notifications/test` | Send a test notification to the configured Discord webhook |
+| `POST /api/v1/agent/notifications/test` | Send a test notification to every configured webhook (Discord/Slack/Teams) |
 | `GET /api/v1/agent/metrics/health` | Check Prometheus connectivity (400 = not configured, 502 = unreachable) |
 
 ### PUT /api/v1/agent/config
