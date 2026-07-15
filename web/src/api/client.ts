@@ -158,6 +158,7 @@ export interface ServerSettings {
   staticDir: string;
   inCluster: boolean;
   namespace: string;
+  version: string; // "dev" outside a released build
 }
 
 // ---- API calls ----

@@ -68,7 +68,7 @@ func newTestAPI(t *testing.T) *httptest.Server {
 	dyn := dynfake.NewSimpleDynamicClient(clientscheme.Scheme, pod, configMap, node, deployment)
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := New(&k8s.Client{Clientset: clientset, Dynamic: dyn}, "http://127.0.0.1:1", "", log)
+	srv := New(&k8s.Client{Clientset: clientset, Dynamic: dyn}, "http://127.0.0.1:1", "", "test", log)
 
 	ts := httptest.NewServer(srv.Router())
 	t.Cleanup(ts.Close)
@@ -91,6 +91,14 @@ func getJSON(t *testing.T, ts *httptest.Server, path string, wantStatus int) map
 		t.Fatalf("GET %s: decoding: %v", path, err)
 	}
 	return out
+}
+
+func TestServerSettingsReportsVersion(t *testing.T) {
+	ts := newTestAPI(t)
+	out := getJSON(t, ts, "/api/v1/settings", http.StatusOK)
+	if out["version"] != "test" {
+		t.Errorf("version = %v, want %q (as passed to New in newTestAPI)", out["version"], "test")
+	}
 }
 
 func TestOverview(t *testing.T) {

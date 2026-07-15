@@ -18,6 +18,11 @@ import (
 	"github.com/emreoztoprak/kentinel/internal/server"
 )
 
+// version is set at build time via -ldflags "-X main.version=X.Y.Z" (see
+// deploy/docker/Dockerfile.server and .github/workflows/release.yml).
+// "dev" in local/unreleased builds.
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
@@ -38,7 +43,7 @@ func run() error {
 	}
 
 	staticDir := staticDirIfPresent(log)
-	srv := server.New(client, cfg.AgentURL, staticDir, log)
+	srv := server.New(client, cfg.AgentURL, staticDir, version, log)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

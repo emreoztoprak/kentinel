@@ -70,7 +70,7 @@ prefix stripped.
 | `POST /api/v1/agent/query` | Body `{"prompt":"..."}` (max 8000 chars). **SSE** response |
 | `GET /api/v1/agent/config` | Runtime agent settings. The API key is reduced to `anthropicKeySet: bool` — never returned |
 | `PUT /api/v1/agent/config` | Update settings (see below). Live-applies on the agent, then persists encrypted to the agent's own database. The only way to change settings after the agent's first boot — see [security.md](security.md) |
-| `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`) |
+| `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`, `version`) |
 | `GET /api/v1/agent/models?provider=&host=` | Selectable models: installed Ollama models or the curated Claude list |
 | `POST /api/v1/agent/notifications/test` | Send a test notification to every configured webhook (Discord/Slack/Teams) |
 | `GET /api/v1/agent/metrics/health` | Check Prometheus connectivity (400 = not configured, 502 = unreachable) |

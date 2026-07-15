@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import AiPanel from "../components/AiPanel";
+import UpdateStatus from "../components/UpdateStatus";
 import { ErrorBox, PageTitle, Spinner, StatusBadge } from "../components/ui";
 import { timeAgo } from "../util";
 
@@ -15,6 +16,8 @@ export default function DashboardPage() {
   return (
     <div>
       <PageTitle>Dashboard</PageTitle>
+
+      <UpdateStatus />
 
       <div className="mb-6">
         <AiPanel />

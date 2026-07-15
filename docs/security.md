@@ -47,6 +47,12 @@ agent sends to that provider's API:
 
 With `LLM_PROVIDER=ollama`, nothing leaves your infrastructure.
 
+Separately, the **browser** (not the cluster) periodically calls GitHub's
+public releases API to power the dashboard's update-check card — this is a
+client-side request from whoever's viewing the UI, not an outbound call
+from any pod, so it adds no new egress requirement to the cluster. It sends
+nothing beyond a standard HTTPS GET; no cluster data is included.
+
 ## Secret handling
 
 Kentinel takes the same approach as most admin-panel-style applications

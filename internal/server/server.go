@@ -22,11 +22,15 @@ type Server struct {
 	// staticDir holds the built SPA; empty disables static serving (dev mode,
 	// where Vite serves the frontend and proxies /api here).
 	staticDir string
+	// version is the running release (e.g. "0.3.0", or "dev" outside a
+	// released build) — surfaced via GET /api/v1/settings for the
+	// dashboard's update-check card.
+	version string
 }
 
 // New creates the server. staticDir may be empty.
-func New(client *k8s.Client, agentURL, staticDir string, log *slog.Logger) *Server {
-	return &Server{k8s: client, agentURL: agentURL, log: log, staticDir: staticDir}
+func New(client *k8s.Client, agentURL, staticDir, version string, log *slog.Logger) *Server {
+	return &Server{k8s: client, agentURL: agentURL, log: log, staticDir: staticDir, version: version}
 }
 
 // Router builds the chi router with all routes and middleware.

@@ -40,7 +40,9 @@ Ollama provider, no cluster data ever leaves your infrastructure.
   status changes (healthy → warning → critical, and recoveries);
   transition-based, never spammy, configurable severity threshold
 - **Settings page** — view and change all agent parameters from the UI;
-  changes apply live and persist to the ConfigMap in k8s mode
+  changes apply live and persist encrypted to the agent's own database
+- **Update checks** — the dashboard checks GitHub for new releases and shows
+  a ready-to-run `helm upgrade` command when one's available
 - **In-app documentation** — this entire docs set is browsable in the UI
   (sidebar → System → Documentation)
 - Dark mode, obviously.

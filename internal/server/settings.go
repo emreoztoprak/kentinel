@@ -18,6 +18,7 @@ func (s *Server) handleServerSettings(w http.ResponseWriter, r *http.Request) {
 		"staticDir":        s.staticDir,
 		"inCluster":        inCluster,
 		"namespace":        namespace,
+		"version":          s.version,
 		"supportedByProxy": true,
 	})
 }
