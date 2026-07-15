@@ -1,33 +1,3 @@
-# Agent configuration. Adjust the provider/model here.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agent-config
-  namespace: kentinel
-data:
-  # "ollama" (default, local) or a cloud provider: "anthropic", "openai",
-  # "deepseek", "gemini" (each needs its API key in agent-secrets).
-  LLM_PROVIDER: "ollama"
-  # qwen3:0.6b is small enough for modest clusters (~1.5GB RAM) and supports
-  # tool calling. Use a bigger model (qwen3, llama3.1) or anthropic for
-  # noticeably better analysis quality.
-  LLM_MODEL: "qwen3:0.6b"
-  OLLAMA_HOST: "http://ollama.kentinel.svc:11434" # only used when LLM_PROVIDER=ollama
-  AGENT_REVIEW_INTERVAL: "5m"
-  # Discord notifications: enable here (or in the Settings UI) and put the
-  # webhook URL in the agent-secrets Secret (DISCORD_WEBHOOK_URL).
-  NOTIFICATIONS_ENABLED: "false"
-  NOTIFY_MIN_SEVERITY: "warning" # or "critical"
-  # Insight history persistence (survives pod restarts; on the agent-data PVC).
-  INSIGHT_DB_PATH: "/data/insights.db"
-  INSIGHT_RETENTION_DAYS: "90"
-  # Metrics source for the agent's usage/throttling tools. Points at the
-  # bundled Prometheus (06-prometheus.yaml) by default; set your own
-  # Prometheus URL here or in the Settings UI. Empty disables metrics tools.
-  PROMETHEUS_URL: "http://prometheus.kentinel.svc:9090"
-  LOG_FORMAT: "json"
-  LOG_LEVEL: "info"
----
 # API keys and webhook URLs. Set them out-of-band (or from the Settings UI,
 # which persists to the agent's own database, not here) instead of
 # committing real values:
@@ -35,10 +5,10 @@ data:
 #     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
 # REPLACE_ME placeholders are treated as "not configured" so
 # `kubectl apply -f deploy/k8s/` works for the ollama provider with no
-# secrets at all. NOTE: the server watches this ConfigMap/Secret and syncs
-# any change to the agent — including a re-apply that resets these
-# placeholders — so whichever of "kubectl apply" or the Settings UI touched
-# settings most recently is what's running. See docs/security.md.
+# secrets at all. Read once, on a genuinely empty database (a fresh
+# install, or the PVC was lost) — after that the agent's own database is
+# authoritative and this Secret is never consulted again, even across a
+# re-apply. See docs/security.md.
 apiVersion: v1
 kind: Secret
 metadata:

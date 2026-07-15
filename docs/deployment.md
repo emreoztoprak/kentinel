@@ -79,13 +79,20 @@ Key values (full reference: `charts/kentinel/values.yaml`):
 | `notifications.*` | off | Discord/Slack/Teams webhooks + severity threshold |
 
 Upgrades: `helm upgrade kentinel oci://ghcr.io/emreoztoprak/charts/kentinel -n kentinel`.
-Settings changed in the UI persist to the agent's own encrypted database,
-not to this ConfigMap/Secret — so a plain `helm upgrade` never overwrites
-them. The server also watches this ConfigMap/Secret (polling every 30s) and
-pushes any change to the agent, so a `--set` for a field you've also
-changed from the UI *does* take effect — whichever of the two happened most
-recently is what's running, no per-field tracking. See
-[security.md](security.md) for how settings are stored.
+
+**These values only matter once** — on the agent's very first boot, when
+its database is empty. After that, they're never read again: not on
+restart, not on `helm upgrade`, no matter what `--set` you pass. Settings
+changed from the UI persist to the agent's own encrypted database, which is
+authoritative from that point forward. This is the same model most
+admin-panel apps use (Grafana's `grafana.ini` is analogous) — see
+[security.md](security.md) for how it's stored, and use the Settings UI for
+anything after the first install.
+
+If you *do* need to change something before the agent has ever booted
+(e.g. scripting a fresh install with a specific provider), pass it via
+`--set` at install time — `helm install` and the *first* `helm upgrade`
+before the agent starts both work fine for that.
 
 ## In-cluster mode — raw manifests
 
@@ -108,7 +115,6 @@ What gets created (namespace `kentinel`):
 | Object | Notes |
 | --- | --- |
 | ServiceAccounts `server`, `agent` + ClusterRoles/Bindings | Split RBAC: server can update/patch + exec; agent is read-only, no secrets |
-| ConfigMap `agent-config` | Provider (default `ollama`), model, review interval |
 | Secret `agent-secrets` | `ANTHROPIC_API_KEY` (placeholder — only needed for the anthropic provider) |
 | Deployments `server`, `agent` | Distroless, non-root, read-only rootfs, probes, resource limits |
 | Deployment `ollama` + PVC + Service | Local LLM (default provider); auto-pulls `qwen3:0.6b` on first boot (~1.5GB RAM — check node headroom). Delete it if you use anthropic |
@@ -120,15 +126,23 @@ The default provider is the in-cluster Ollama — it works out of the box, no
 key needed. The very first review can take a few minutes while the model
 downloads and loads.
 
-Switch to Anthropic Claude (better analysis quality):
+Switch to Anthropic Claude (better analysis quality) — easiest from the
+Settings UI once it's up. To bootstrap a *fresh, not-yet-started* install
+straight into Anthropic instead of Ollama, edit `LLM_PROVIDER` in
+`03-agent.yaml` before applying (or `kubectl edit deploy/agent` before its
+first-ever start), and set the key:
 
 ```sh
 kubectl -n kentinel create secret generic agent-secrets \
   --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
   --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n kentinel patch configmap agent-config --type merge \
-  -p '{"data":{"LLM_PROVIDER":"anthropic","LLM_MODEL":""}}'
-kubectl -n kentinel rollout restart deploy/agent
+```
+
+If the agent has already booted once, editing the Deployment's env or the
+Secret does nothing — see the note on "Upgrading" below. Use the Settings
+UI instead.
+
+```sh
 # optional: free the ollama resources
 kubectl -n kentinel delete deploy/ollama svc/ollama pvc/ollama-models
 ```
@@ -149,14 +163,15 @@ Rebuild images, reload/push, then:
 kubectl -n kentinel rollout restart deploy/server deploy/agent
 ```
 
-Manifest changes: `kubectl apply -f deploy/k8s/` is idempotent — but note
-the server watches `agent-config`/`agent-secrets` and syncs any change to
-the agent, including a re-apply that resets `agent-secrets` back to its
-committed `REPLACE_ME` placeholders. If you've since configured a real key
-from the Settings UI, it's unaffected (it lives in the agent's own
-database, not this Secret); if you set a real key *manually* into
-`agent-secrets` (the `kubectl create secret` command above), re-create it
-after a re-apply.
+Manifest changes: `kubectl apply -f deploy/k8s/` is idempotent, and always
+safe to re-run — `agent-secrets` only matters on the agent's very first
+boot (an empty database). A re-apply resets it back to the committed
+`REPLACE_ME` placeholders, but that has no effect on an already-running
+agent; anything configured since — whether from the Settings UI or a
+manual `kubectl create secret` before first boot — stays exactly as it
+was. The only way to make Kubernetes-side values matter again is an
+agent restart with a genuinely empty database (e.g. after deleting the
+PVC).
 
 ### Uninstalling
 

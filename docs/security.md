@@ -49,31 +49,35 @@ With `LLM_PROVIDER=ollama`, nothing leaves your infrastructure.
 
 ## Secret handling
 
-- The agent's ClusterRole excludes `secrets` entirely — the ConfigMap/Secret
-  watcher that syncs `helm upgrade`/`kubectl edit` changes (below) runs in
-  the **server**, which already has legitimate Secret read access for the
-  resource browser; the agent itself never gains that permission.
+Kentinel takes the same approach as most admin-panel-style applications
+(Grafana, WordPress, etc.): a deploy-time credential (env var / Secret) is
+consulted **once**, to seed a brand-new install, and the application's own
+database is the permanent source of truth for everything after that. There
+is deliberately no live sync between the two.
+
+- The agent's ClusterRole excludes `secrets` entirely, and this never
+  changes at runtime — the agent has no code path that reads a Kubernetes
+  Secret after boot.
 - LLM API keys and notification webhooks can be set from the Settings page
   but are **write-only**: `GET /api/v1/agent/config` only ever reports
   set/not-set booleans, and the raw values never appear in any UI or API
   response.
-- A value saved from the Settings UI is persisted by the **agent itself**
-  to a `settings` table in its own SQLite file (the same one review history
+- A value saved from the Settings UI is persisted by the agent to a
+  `settings` table in its own SQLite file (the same one review history
   lives in) — **encrypted with AES-256-GCM**, not stored as plaintext or
   base64. The encryption key is a random 32 bytes generated on first boot
   and kept as a sibling file next to the database (mode `0600`), on the
   same PVC — nothing new to mount, no separate Kubernetes Secret to manage.
-  A consequence worth knowing: a value set from the UI never appears in any
-  Kubernetes object at all, so it's outside the resource browser's reach
-  entirely, unlike the `agent-secrets` Secret described next.
-- The `agent-secrets` Secret (and `agent-config` ConfigMap) hold whatever
-  was declared at install time via Helm values / `--set` / the raw
-  manifests — replace the committed `REPLACE_ME` placeholders out-of-band
-  and never commit real values. The **server polls these objects** (every
-  30s) and pushes any change to the agent, so a value set here later (e.g.
-  a fresh `helm upgrade --set`) becomes current too — whichever of the
-  Settings UI or a Kubernetes-side change happened most recently wins, no
-  per-field tracking (see [deployment.md](deployment.md)).
+  It never appears in any Kubernetes object, so it's outside the resource
+  browser's reach entirely.
+- The `agent-secrets` Secret only matters **once**: on the agent's very
+  first boot, when its database is genuinely empty (a fresh install, or
+  the PVC was lost). From that moment on the agent's database is
+  authoritative and the Secret is never read again — not on restart, not
+  on a `helm upgrade`, not if you edit it directly. Replace the committed
+  `REPLACE_ME` placeholders out-of-band for a scripted first install, but
+  don't expect editing this Secret later to do anything; use the Settings
+  UI instead. See [deployment.md](deployment.md).
   Remember the flip side of write access from the UI: since it has no
   auth, anyone who can reach it can *replace* the key or redirect the
   agent to their own Ollama host — one more reason to keep this behind

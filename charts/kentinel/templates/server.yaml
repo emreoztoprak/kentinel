@@ -28,10 +28,6 @@ spec:
           env:
             - name: AGENT_URL
               value: http://{{ .Release.Name }}-agent.{{ .Release.Namespace }}.svc:8090
-            - name: AGENT_CONFIGMAP_NAME
-              value: {{ .Release.Name }}-agent-config
-            - name: AGENT_SECRET_NAME
-              value: {{ .Release.Name }}-agent-secrets
             - name: LOG_FORMAT
               value: {{ .Values.logFormat | quote }}
             - name: LOG_LEVEL

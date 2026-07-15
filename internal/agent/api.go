@@ -39,7 +39,6 @@ func (a *API) Router() http.Handler {
 	r.Post("/query", a.handleQuery)
 	r.Get("/config", a.handleGetConfig)
 	r.Put("/config", a.handleUpdateConfig)
-	r.Put("/config/sync", a.handleSyncConfig)
 	r.Get("/models", a.handleModels)
 	r.Post("/notifications/test", a.handleTestNotification)
 	r.Get("/metrics/health", a.handleMetricsHealth)
@@ -129,8 +128,10 @@ func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, a.runtime.View())
 }
 
-// handleUpdateConfig validates and live-applies a settings update. The UI
-// backend calls this (and then persists to the ConfigMap in k8s mode).
+// handleUpdateConfig validates and live-applies a settings update, then
+// persists it to the agent's own database (encrypted) so it survives pod
+// restarts. This is the only way to change settings after the very first
+// boot — see Runtime.Apply and docs/security.md.
 func (a *API) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var update SettingsUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -142,39 +143,6 @@ func (a *API) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view, err := a.runtime.Apply(update)
-	if err != nil {
-		a.writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "bad_request",
-			"message": err.Error(),
-		})
-		return
-	}
-	a.writeJSON(w, http.StatusOK, view)
-}
-
-// handleSyncConfig authoritatively replaces settings from the server's
-// ConfigMap/Secret watcher — not exposed to the UI. Unlike handleUpdateConfig,
-// empty fields really do mean "unset" (see SettingsSync).
-func (a *API) handleSyncConfig(w http.ResponseWriter, r *http.Request) {
-	var sync SettingsSync
-	if err := json.NewDecoder(r.Body).Decode(&sync); err != nil {
-		a.writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "bad_request",
-			"message": "invalid settings JSON: " + err.Error(),
-		})
-		return
-	}
-
-	next, err := sync.toSettings()
-	if err != nil {
-		a.writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "bad_request",
-			"message": err.Error(),
-		})
-		return
-	}
-
-	view, err := a.runtime.Sync(next)
 	if err != nil {
 		a.writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":   "bad_request",

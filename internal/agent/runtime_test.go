@@ -212,6 +212,42 @@ func TestApplyPersistsAndRestoresAcrossRestart(t *testing.T) {
 	}
 }
 
+// TestDeploymentDefaultsOnlyMatterOnFirstBoot is the core guarantee of the
+// bootstrap-only model: once anything has been saved, cfg (env vars, in
+// turn sourced from the ConfigMap/Secret) is never consulted again — not
+// even a completely different cfg on a later boot, simulating a `helm
+// upgrade --set` after the database already has data.
+func TestDeploymentDefaultsOnlyMatterOnFirstBoot(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	store := NewPersistentStore(dbPath, 90, 20, slog.Default())
+
+	rt, err := NewRuntime(baseConfig(), store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime failed: %v", err)
+	}
+	if _, err := rt.Apply(SettingsUpdate{
+		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "10m", MonitorEnabled: true,
+	}); err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+
+	// A wildly different cfg, as if a `helm upgrade --set` had changed the
+	// ConfigMap after this database already had saved settings.
+	laterCfg := &config.Agent{
+		Provider: "gemini", Model: "gemini-2.5-flash", OllamaHost: "http://unused",
+		APIKeys:        map[string]string{"gemini": "AIza-should-be-ignored"},
+		ReviewInterval: time.Hour, MonitorEnabled: false, NotifyMinSeverity: "critical",
+	}
+	restarted, err := NewRuntime(laterCfg, store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime with later cfg failed: %v", err)
+	}
+	got := restarted.View()
+	if got.Provider != "ollama" || got.ReviewInterval != "10m0s" || !got.MonitorEnabled {
+		t.Errorf("later cfg leaked into settings, want the persisted ones untouched: %+v", got)
+	}
+}
+
 // TestNewRuntimeFallsBackWhenPersistedSettingsAreInvalid confirms a stale
 // or corrupted saved value never keeps the agent from booting — it must
 // fall back to the deployment defaults instead of failing NewRuntime.
@@ -233,69 +269,5 @@ func TestNewRuntimeFallsBackWhenPersistedSettingsAreInvalid(t *testing.T) {
 	}
 	if rt.View().Provider != "ollama" {
 		t.Errorf("provider = %q, want fallback to deployment default \"ollama\"", rt.View().Provider)
-	}
-}
-
-// TestSyncIsAuthoritative verifies Sync's key difference from Apply: an
-// empty field really does clear a previously-set value, matching a
-// Kubernetes ConfigMap/Secret's actual current (not write-only) contents.
-func TestSyncIsAuthoritative(t *testing.T) {
-	rt := testRuntime(t)
-
-	if _, err := rt.Apply(SettingsUpdate{
-		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "5m",
-		MonitorEnabled: true, NotificationsEnabled: true,
-		SlackWebhook: "https://hooks.slack.com/services/T/B/x",
-	}); err != nil {
-		t.Fatalf("seeding webhook via Apply failed: %v", err)
-	}
-	if !rt.View().SlackWebhookSet {
-		t.Fatal("webhook was not set by Apply")
-	}
-
-	// Sync with an empty SlackWebhook and NotificationsEnabled=false must
-	// actually clear it — this is exactly what happens when a `helm
-	// upgrade` removes a previously-set webhook from the Secret.
-	view, err := rt.Sync(Settings{
-		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: 5 * time.Minute,
-		MonitorEnabled: true, NotifyMinSeverity: "warning",
-	})
-	if err != nil {
-		t.Fatalf("Sync failed: %v", err)
-	}
-	if view.SlackWebhookSet {
-		t.Error("Sync should have cleared the webhook, Apply's write-only semantics must not apply")
-	}
-	if view.NotificationsEnabled {
-		t.Error("Sync should have disabled notifications")
-	}
-}
-
-// TestSyncDefaultsEmptyNotifyMinSeverity mirrors merge()'s behavior: a
-// ConfigMap missing NOTIFY_MIN_SEVERITY (empty string) must default to
-// "warning" rather than fail validation.
-func TestSyncDefaultsEmptyNotifyMinSeverity(t *testing.T) {
-	rt := testRuntime(t)
-	view, err := rt.Sync(Settings{
-		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: 5 * time.Minute,
-		MonitorEnabled: true,
-	})
-	if err != nil {
-		t.Fatalf("Sync failed: %v", err)
-	}
-	if view.NotifyMinSeverity != "warning" {
-		t.Errorf("NotifyMinSeverity = %q, want default \"warning\"", view.NotifyMinSeverity)
-	}
-}
-
-// TestSyncRejectsInvalidSettings confirms Sync shares validateSettings with
-// Apply rather than skipping validation for an "authoritative" source.
-func TestSyncRejectsInvalidSettings(t *testing.T) {
-	rt := testRuntime(t)
-	_, err := rt.Sync(Settings{
-		Provider: "ollama", OllamaHost: "", ReviewInterval: 5 * time.Minute, MonitorEnabled: true,
-	})
-	if err == nil {
-		t.Fatal("Sync with a missing ollamaHost should fail validation")
 	}
 }

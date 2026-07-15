@@ -51,9 +51,39 @@ spec:
           ports:
             - containerPort: 8090
               name: http
+          # Deployment defaults: read once, only on a genuinely empty
+          # database (fresh install, or the PVC was lost). Once the agent
+          # has ever saved settings, these are never consulted again — the
+          # Settings UI is the only way to change anything after that. See
+          # docs/security.md.
+          env:
+            - name: LLM_PROVIDER
+              value: {{ .Values.llm.provider | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.llm.model | quote }}
+            - name: OLLAMA_HOST
+              value: {{ include "kentinel.ollamaHost" . | quote }}
+            - name: AGENT_REVIEW_INTERVAL
+              value: {{ .Values.agent.reviewInterval | quote }}
+            - name: AGENT_MONITOR_ENABLED
+              value: {{ .Values.agent.monitorEnabled | quote }}
+            - name: NOTIFICATIONS_ENABLED
+              value: {{ .Values.notifications.enabled | quote }}
+            - name: NOTIFY_MIN_SEVERITY
+              value: {{ .Values.notifications.minSeverity | quote }}
+            {{- if .Values.agent.persistence.enabled }}
+            - name: INSIGHT_DB_PATH
+              value: "/data/insights.db"
+            {{- end }}
+            - name: INSIGHT_RETENTION_DAYS
+              value: {{ .Values.agent.insightRetentionDays | quote }}
+            - name: PROMETHEUS_URL
+              value: {{ include "kentinel.prometheusUrl" . | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.logFormat | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
           envFrom:
-            - configMapRef:
-                name: {{ .Release.Name }}-agent-config
             - secretRef:
                 name: {{ .Release.Name }}-agent-secrets
           {{- if .Values.agent.persistence.enabled }}

@@ -221,26 +221,14 @@ Where the tokens go:
 - **Queries cost per use**; a typical "analyze these logs" question runs 2–6
   LLM calls with a few KB of tool results each.
 
-Every cost lever is an environment variable on the agent — no code changes,
-rebuilds, or pod restart needed. Easiest: the Settings page. In k8s mode you
-can also edit the `agent-config` ConfigMap directly (`kubectl patch` or
-`helm upgrade --set`); the server notices within 30s and pushes it to the
-agent live. If you've also changed the same field from the Settings UI,
-whichever you touched most recently is what's running (see
-[security.md](security.md)).
+Every cost lever below is a Settings-page field — changes apply immediately,
+no restart needed. (They're also environment variables the agent reads on
+its very first boot, but once anything has been saved, only the Settings UI
+matters from then on — see [security.md](security.md).)
 
 | Lever | Effect on cost |
 | --- | --- |
-| `AGENT_REVIEW_INTERVAL` | Biggest lever. The loop calls the LLM once per interval — `15m` cuts the default cost to a third, `1h` to a twelfth. |
-| `LLM_MODEL` | Which model the calls hit. Keep the default `claude-opus-4-8` for the best analysis, or set a cheaper Claude model if its review quality is good enough for you. |
-| `LLM_PROVIDER` | `anthropic` pays per token; `ollama` runs a local model at zero API cost (needs local hardware and a tool-calling-capable model). |
-| `AGENT_MONITOR_ENABLED=false` | Turns the periodic review off entirely — nothing is spent at idle; you only pay when you actually ask the assistant a question. |
-
-Example — halve-and-then-some the default spend without losing the dashboard
-review:
-
-```sh
-kubectl -n kentinel patch configmap agent-config --type merge \
-  -p '{"data":{"AGENT_REVIEW_INTERVAL":"15m"}}'
-# no rollout restart needed — the server syncs this to the agent within 30s
-```
+| Review interval (`AGENT_REVIEW_INTERVAL`) | Biggest lever. The loop calls the LLM once per interval — `15m` cuts the default cost to a third, `1h` to a twelfth. |
+| Model (`LLM_MODEL`) | Which model the calls hit. Keep the default `claude-opus-4-8` for the best analysis, or set a cheaper Claude model if its review quality is good enough for you. |
+| Provider (`LLM_PROVIDER`) | `anthropic` pays per token; `ollama` runs a local model at zero API cost (needs local hardware and a tool-calling-capable model). |
+| Periodic review toggle | Turns the periodic review off entirely — nothing is spent at idle; you only pay when you actually ask the assistant a question. |

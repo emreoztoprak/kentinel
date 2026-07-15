@@ -51,9 +51,50 @@ spec:
           ports:
             - containerPort: 8090
               name: http
+          # Deployment defaults: read once, only on a genuinely empty
+          # database (fresh install, or the PVC was lost). Once the agent
+          # has ever saved settings, these are never consulted again — the
+          # Settings UI is the only way to change anything after that. See
+          # docs/security.md.
+          env:
+            # "ollama" (default, local) or a cloud provider: "anthropic",
+            # "openai", "deepseek", "gemini" (each needs its API key in
+            # agent-secrets).
+            - name: LLM_PROVIDER
+              value: "ollama"
+            # qwen3:0.6b is small enough for modest clusters (~1.5GB RAM)
+            # and supports tool calling. Use a bigger model (qwen3,
+            # llama3.1) or anthropic for noticeably better analysis quality.
+            - name: LLM_MODEL
+              value: "qwen3:0.6b"
+            - name: OLLAMA_HOST
+              value: "http://ollama.kentinel.svc:11434" # only used when LLM_PROVIDER=ollama
+            - name: AGENT_REVIEW_INTERVAL
+              value: "5m"
+            # Discord/Slack/Teams notifications: enable here (or in the
+            # Settings UI) and put the webhook URL in the agent-secrets
+            # Secret.
+            - name: NOTIFICATIONS_ENABLED
+              value: "false"
+            - name: NOTIFY_MIN_SEVERITY
+              value: "warning" # or "critical"
+            # Insight history persistence (survives pod restarts; on the
+            # agent-data PVC).
+            - name: INSIGHT_DB_PATH
+              value: "/data/insights.db"
+            - name: INSIGHT_RETENTION_DAYS
+              value: "90"
+            # Metrics source for the agent's usage/throttling tools. Points
+            # at the bundled Prometheus (06-prometheus.yaml) by default; set
+            # your own Prometheus URL here or in the Settings UI. Empty
+            # disables metrics tools.
+            - name: PROMETHEUS_URL
+              value: "http://prometheus.kentinel.svc:9090"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "info"
           envFrom:
-            - configMapRef:
-                name: agent-config
             - secretRef:
                 name: agent-secrets
           volumeMounts:

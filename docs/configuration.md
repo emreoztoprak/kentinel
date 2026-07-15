@@ -21,11 +21,11 @@ How it works:
   both `docker-compose.yml` and the Helm chart / raw manifests). No
   volume, no key file, no persistence — the UI tells you which case you're
   in (`persistent: true/false`) after every save.
-- In k8s mode, a saved setting always wins over the chart/manifest-declared
-  ConfigMap/Secret values — *until* those change too (`helm upgrade --set`,
-  `kubectl edit`), at which point that becomes current instead. Whichever
-  happened most recently is what's running; see
-  [security.md](security.md) for the mechanism.
+- Once anything has ever been saved, it's permanent: the deployment's env
+  vars / Secret only matter on the agent's very first boot (a genuinely
+  empty database). A later `helm upgrade --set`, `kubectl edit`, or
+  manifest re-apply has **no effect** — the Settings UI is the only way to
+  change something after that first boot. See [security.md](security.md).
 
 Server parameters (port, agent URL, RBAC) are deployment-level and remain
 read-only in the UI — change them in the manifests / compose file.

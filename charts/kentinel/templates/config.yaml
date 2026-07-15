@@ -1,29 +1,10 @@
-# Agent configuration. The Settings UI live-applies changes and persists
-# them to its own encrypted SQLite file, not here — the server only reads
-# this object (to notice changes made via `helm upgrade`/`kubectl edit` and
-# push them to the agent), so there's nothing for `helm upgrade` to conflict
-# with. See docs/security.md.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Release.Name }}-agent-config
-  labels: {{- include "kentinel.labels" . | nindent 4 }}
-data:
-  LLM_PROVIDER: {{ .Values.llm.provider | quote }}
-  LLM_MODEL: {{ .Values.llm.model | quote }}
-  OLLAMA_HOST: {{ include "kentinel.ollamaHost" . | quote }}
-  AGENT_REVIEW_INTERVAL: {{ .Values.agent.reviewInterval | quote }}
-  AGENT_MONITOR_ENABLED: {{ .Values.agent.monitorEnabled | quote }}
-  NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
-  NOTIFY_MIN_SEVERITY: {{ .Values.notifications.minSeverity | quote }}
-  {{- if .Values.agent.persistence.enabled }}
-  INSIGHT_DB_PATH: "/data/insights.db"
-  {{- end }}
-  INSIGHT_RETENTION_DAYS: {{ .Values.agent.insightRetentionDays | quote }}
-  PROMETHEUS_URL: {{ include "kentinel.prometheusUrl" . | quote }}
-  LOG_FORMAT: {{ .Values.logFormat | quote }}
-  LOG_LEVEL: {{ .Values.logLevel | quote }}
----
+# API keys and webhook URLs. Read once, on a genuinely empty database (a
+# fresh install, or the PVC was lost) — after that the agent's own database
+# is authoritative and this Secret is never consulted again, even across
+# `helm upgrade`. Kept as a Secret (rather than inlined as Deployment env,
+# like the rest of the agent's bootstrap config) because real credentials
+# deserve Secret-specific RBAC and handling, not because it stays live.
+# See docs/security.md.
 apiVersion: v1
 kind: Secret
 metadata:

@@ -84,28 +84,6 @@ type SettingsUpdate struct {
 	PrometheusURL string `json:"prometheusUrl"`
 }
 
-// SettingsSync is the PUT /config/sync payload: the authoritative current
-// state of the ConfigMap/Secret, pushed by the server's watcher. Unlike
-// SettingsUpdate, fields are NOT write-only — an empty webhook URL here
-// really does mean "no webhook", because the caller has read the actual
-// current value rather than working from the UI's masked view.
-type SettingsSync struct {
-	Provider       string            `json:"provider"`
-	Model          string            `json:"model"`
-	OllamaHost     string            `json:"ollamaHost"`
-	APIKeys        map[string]string `json:"apiKeys"`
-	ReviewInterval string            `json:"reviewInterval"`
-	MonitorEnabled bool              `json:"monitorEnabled"`
-
-	NotificationsEnabled bool   `json:"notificationsEnabled"`
-	DiscordWebhook       string `json:"discordWebhookUrl"`
-	SlackWebhook         string `json:"slackWebhookUrl"`
-	TeamsWebhook         string `json:"teamsWebhookUrl"`
-	NotifyMinSeverity    string `json:"notifyMinSeverity"`
-
-	PrometheusURL string `json:"prometheusUrl"`
-}
-
 // Runtime holds the agent's mutable configuration and the active LLM
 // provider. All access is through accessors so settings can change while
 // reviews and queries are running (in-flight calls keep the provider they
@@ -119,12 +97,14 @@ type Runtime struct {
 	log      *slog.Logger
 }
 
-// NewRuntime builds the runtime from boot config (deployment defaults), then
-// overlays any settings previously saved to store — from a UI save or a
-// ConfigMap/Secret sync — so the last-written state always wins, exactly as
-// it did before this restart. store may be nil (Docker mode without
-// persistence); NewRuntime falls back to cfg alone in that case. Fails only
-// if neither the persisted nor the deployment-default provider can be built.
+// NewRuntime builds the runtime from boot config (deployment defaults from
+// env vars — used only when nothing has ever been saved yet), then checks
+// store for settings saved by a previous Apply. If any exist, they replace
+// cfg entirely and cfg is never consulted again — the ConfigMap/Secret only
+// matter on a genuinely first boot (fresh install, or the database was
+// lost). store may be nil (Docker mode without persistence); NewRuntime
+// falls back to cfg alone in that case. Fails only if neither the persisted
+// nor the deployment-default provider can be built.
 func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, error) {
 	settings := Settings{
 		Provider:       cfg.Provider,
@@ -290,67 +270,6 @@ func (r *Runtime) Apply(update SettingsUpdate) (SettingsView, error) {
 	return r.View(), nil
 }
 
-// toSettings converts the wire payload to Settings, parsing the interval.
-func (sy SettingsSync) toSettings() (Settings, error) {
-	interval, err := time.ParseDuration(sy.ReviewInterval)
-	if err != nil {
-		return Settings{}, fmt.Errorf("reviewInterval %q is not a valid duration (e.g. \"5m\", \"90s\")", sy.ReviewInterval)
-	}
-	return Settings{
-		Provider: sy.Provider, Model: sy.Model, OllamaHost: sy.OllamaHost,
-		APIKeys: cloneKeys(sy.APIKeys), ReviewInterval: interval, MonitorEnabled: sy.MonitorEnabled,
-
-		NotificationsEnabled: sy.NotificationsEnabled,
-		DiscordWebhook:       sy.DiscordWebhook,
-		SlackWebhook:         sy.SlackWebhook,
-		TeamsWebhook:         sy.TeamsWebhook,
-		NotifyMinSeverity:    sy.NotifyMinSeverity,
-
-		PrometheusURL: sy.PrometheusURL,
-	}, nil
-}
-
-// Sync replaces settings wholesale from an authoritative source — the
-// server's ConfigMap/Secret watcher, which has read the true current values
-// directly. Unlike Apply, there are no write-only "empty means keep the
-// existing value" semantics here: an empty field really does mean "unset",
-// so a Helm upgrade that removes a webhook actually removes it.
-func (r *Runtime) Sync(next Settings) (SettingsView, error) {
-	if next.Model == "" {
-		next.Model = DefaultModel(next.Provider)
-	}
-	if next.NotifyMinSeverity == "" {
-		next.NotifyMinSeverity = "warning"
-	}
-	if err := validateSettings(next); err != nil {
-		return SettingsView{}, err
-	}
-
-	provider, err := buildProvider(next)
-	if err != nil {
-		return SettingsView{}, err
-	}
-
-	r.mu.Lock()
-	r.settings = next
-	r.provider = provider
-	r.mu.Unlock()
-
-	if r.store != nil {
-		r.store.SaveSettings(next)
-	}
-
-	r.log.Info("settings synced from ConfigMap/Secret",
-		"provider", next.Provider, "model", next.Model,
-		"interval", next.ReviewInterval.String(), "monitor", next.MonitorEnabled)
-
-	select {
-	case r.changed <- struct{}{}:
-	default:
-	}
-	return r.View(), nil
-}
-
 // merge validates the update against current state and produces the next
 // settings. Write-only secrets are never dropped unless replaced.
 func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
@@ -401,9 +320,8 @@ func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
 	return next, nil
 }
 
-// validateSettings checks a fully-merged settings value, shared by both
-// Apply (UI, write-only merge) and Sync (authoritative replace) so the two
-// paths can never drift out of agreement on what's valid.
+// validateSettings checks a fully-merged settings value, split out of
+// merge() for readability.
 func validateSettings(s Settings) error {
 	if s.ReviewInterval < 30*time.Second {
 		return fmt.Errorf("reviewInterval %s is too short (minimum 30s)", s.ReviewInterval)

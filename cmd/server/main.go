@@ -49,8 +49,6 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go srv.WatchAgentConfig(ctx, 0) // no-op outside a cluster; 0 = default interval
-
 	errCh := make(chan error, 1)
 	go func() {
 		log.Info("server listening", "port", cfg.Port, "agentURL", cfg.AgentURL, "static", staticDir)

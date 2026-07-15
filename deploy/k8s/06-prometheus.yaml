@@ -5,8 +5,7 @@
 # node-exporter, no kube-state-metrics).
 #
 # Already have Prometheus? Delete everything in this file and point the agent
-# at yours: Settings → Metrics → Prometheus URL (or PROMETHEUS_URL in the
-# agent-config ConfigMap).
+# at yours from Settings → Metrics → Prometheus URL.
 #   kubectl -n kentinel delete deploy/prometheus svc/prometheus pvc/prometheus-data \
 #     configmap/prometheus-config serviceaccount/prometheus
 #   kubectl delete clusterrole kentinel-prometheus clusterrolebinding kentinel-prometheus
