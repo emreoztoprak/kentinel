@@ -17,12 +17,22 @@ import (
 	"github.com/emreoztoprak/kentinel/internal/config"
 )
 
-// Names of the settings write-back targets. The raw manifests use the
-// defaults; the Helm chart overrides them via env because its object names
-// carry the release prefix.
+// Names of the settings write-back targets. These are deliberately separate
+// objects from the ones Helm/the raw manifests declare values for (see
+// config.yaml / 02-config.yaml): the server writes here with a plain
+// Update(), which under Kubernetes' managed-fields tracking claims exclusive
+// ownership of every key it touches. If it wrote into the same ConfigMap/
+// Secret Helm declares data for, the next `helm upgrade` would hard-conflict
+// over any field the server had changed. Since Helm never declares data for
+// these override objects, there's no competing owner to conflict with.
+// The base and override sources are merged via envFrom precedence (agent.yaml
+// / 03-agent.yaml): override keys win, unset ones fall through to the base.
+//
+// The raw manifests use the defaults; the Helm chart overrides them via env
+// because its object names carry the release prefix.
 var (
-	agentConfigMapName = envOr("AGENT_CONFIGMAP_NAME", "agent-config")
-	agentSecretName    = envOr("AGENT_SECRET_NAME", "agent-secrets")
+	agentConfigOverridesName = envOr("AGENT_CONFIGMAP_OVERRIDES_NAME", "agent-config-overrides")
+	agentSecretOverridesName = envOr("AGENT_SECRET_OVERRIDES_NAME", "agent-secrets-overrides")
 )
 
 func envOr(key, def string) string {
@@ -122,7 +132,7 @@ func (s *Server) handleAgentConfigUpdate(w http.ResponseWriter, r *http.Request)
 			s.log.Error("persisting agent settings failed", "error", err)
 		} else {
 			persisted = true
-			s.log.Info("agent settings persisted", "configMap", agentConfigMapName, "namespace", namespace)
+			s.log.Info("agent settings persisted", "configMap", agentConfigOverridesName, "namespace", namespace)
 		}
 	}
 
@@ -139,12 +149,12 @@ func (s *Server) handleAgentConfigUpdate(w http.ResponseWriter, r *http.Request)
 // from, and the API key into the Secret (only when a new key was provided).
 func (s *Server) persistAgentConfig(ctx context.Context, namespace string, update agentConfigUpdate) error {
 	configMaps := s.k8s.Clientset.CoreV1().ConfigMaps(namespace)
-	cm, err := configMaps.Get(ctx, agentConfigMapName, metav1.GetOptions{})
+	cm, err := configMaps.Get(ctx, agentConfigOverridesName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return fmt.Errorf("ConfigMap %s not found in namespace %s — apply the deploy/k8s manifests first", agentConfigMapName, namespace)
+		return fmt.Errorf("ConfigMap %s not found in namespace %s — apply the deploy/k8s manifests first", agentConfigOverridesName, namespace)
 	}
 	if err != nil {
-		return fmt.Errorf("reading ConfigMap %s: %w", agentConfigMapName, err)
+		return fmt.Errorf("reading ConfigMap %s: %w", agentConfigOverridesName, err)
 	}
 
 	if cm.Data == nil {
@@ -162,7 +172,7 @@ func (s *Server) persistAgentConfig(ctx context.Context, namespace string, updat
 	cm.Data["PROMETHEUS_URL"] = update.PrometheusURL // empty is meaningful: disables metrics
 
 	if _, err := configMaps.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("updating ConfigMap %s: %w", agentConfigMapName, err)
+		return fmt.Errorf("updating ConfigMap %s: %w", agentConfigOverridesName, err)
 	}
 
 	// Secret write-back: API key (keyed by the selected provider) and any
@@ -185,9 +195,9 @@ func (s *Server) persistAgentConfig(ctx context.Context, namespace string, updat
 
 	if len(secretUpdates) > 0 {
 		secrets := s.k8s.Clientset.CoreV1().Secrets(namespace)
-		secret, err := secrets.Get(ctx, agentSecretName, metav1.GetOptions{})
+		secret, err := secrets.Get(ctx, agentSecretOverridesName, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("reading Secret %s: %w", agentSecretName, err)
+			return fmt.Errorf("reading Secret %s: %w", agentSecretOverridesName, err)
 		}
 		if secret.Data == nil {
 			secret.Data = map[string][]byte{}
@@ -196,7 +206,7 @@ func (s *Server) persistAgentConfig(ctx context.Context, namespace string, updat
 			secret.Data[k] = []byte(v)
 		}
 		if _, err := secrets.Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
-			return fmt.Errorf("updating Secret %s: %w", agentSecretName, err)
+			return fmt.Errorf("updating Secret %s: %w", agentSecretOverridesName, err)
 		}
 	}
 	return nil

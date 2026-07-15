@@ -1,5 +1,7 @@
-# Agent configuration. The Settings UI live-applies changes and writes them
-# back into this ConfigMap and Secret, so they survive pod restarts.
+# Agent configuration: chart-declared defaults. The Settings UI live-applies
+# changes and persists them to the *-overrides objects below instead of
+# here, so they survive pod restarts without conflicting with this chart's
+# declared values on the next `helm upgrade`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -35,3 +37,24 @@ stringData:
   DISCORD_WEBHOOK_URL: {{ .Values.notifications.discordWebhookUrl | quote }}
   SLACK_WEBHOOK_URL: {{ .Values.notifications.slackWebhookUrl | quote }}
   TEAMS_WEBHOOK_URL: {{ .Values.notifications.teamsWebhookUrl | quote }}
+---
+# Settings-UI write-back targets. The server only ever writes here, never to
+# the ConfigMap/Secret above — this chart never declares data for these, so
+# there's no field ownership for `helm upgrade` to conflict with. The agent
+# Deployment layers these on top of the objects above via envFrom order, so
+# a saved setting wins and survives pod restarts, while anything never
+# touched from the Settings UI keeps following the chart's declared values.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-agent-config-overrides
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+data: {}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-agent-secrets-overrides
+  labels: {{- include "kentinel.labels" . | nindent 4 }}
+type: Opaque
+data: {}

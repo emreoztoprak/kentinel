@@ -79,8 +79,11 @@ Key values (full reference: `charts/kentinel/values.yaml`):
 | `notifications.*` | off | Discord/Slack/Teams webhooks + severity threshold |
 
 Upgrades: `helm upgrade kentinel oci://ghcr.io/emreoztoprak/charts/kentinel -n kentinel`.
-Settings changed in the UI persist to the release's ConfigMap/Secret — a
-`helm upgrade` with explicit `--set` values for those fields overwrites them.
+Settings changed in the UI persist to a separate `*-agent-config-overrides`
+ConfigMap / `*-agent-secrets-overrides` Secret that the chart never declares
+data for, so a plain `helm upgrade` never overwrites them. An explicit
+`--set` for a field you've also changed from the UI still loses to the UI's
+saved value — the override always wins on the next pod restart, by design.
 
 ## In-cluster mode — raw manifests
 
@@ -105,6 +108,7 @@ What gets created (namespace `kentinel`):
 | ServiceAccounts `server`, `agent` + ClusterRoles/Bindings | Split RBAC: server can update/patch + exec; agent is read-only, no secrets |
 | ConfigMap `agent-config` | Provider (default `ollama`), model, review interval |
 | Secret `agent-secrets` | `ANTHROPIC_API_KEY` (placeholder — only needed for the anthropic provider) |
+| ConfigMap `agent-config-overrides`, Secret `agent-secrets-overrides` | Empty by default; the Settings UI writes here, never to the objects above, so `kubectl apply -f deploy/k8s/` is always safe to re-run |
 | Deployments `server`, `agent` | Distroless, non-root, read-only rootfs, probes, resource limits |
 | Deployment `ollama` + PVC + Service | Local LLM (default provider); auto-pulls `qwen3:0.6b` on first boot (~1.5GB RAM — check node headroom). Delete it if you use anthropic |
 | Deployment `prometheus` + PVC + Service + RBAC | Minimal metrics source for the agent (kubelet scrape only, 7d retention). Have your own Prometheus? Point the agent at it (Settings → Metrics) and delete this one — commands in `06-prometheus.yaml` |
@@ -144,9 +148,13 @@ Rebuild images, reload/push, then:
 kubectl -n kentinel rollout restart deploy/server deploy/agent
 ```
 
-Manifest changes: `kubectl apply -f deploy/k8s/` is idempotent — except the
-`agent-secrets` placeholder, which would overwrite your real key. Apply
-selectively or re-create the secret afterwards.
+Manifest changes: `kubectl apply -f deploy/k8s/` is idempotent and always
+safe — Settings-UI changes live in the `*-overrides` objects, which the
+manifests never declare data for. The one exception is a real key you set
+*manually* into the base `agent-secrets` (e.g. via the `kubectl create
+secret` command above, bypassing the UI) — re-applying resets that object's
+`REPLACE_ME` placeholders, so re-create the secret afterwards if you used
+that path.
 
 ### Uninstalling
 

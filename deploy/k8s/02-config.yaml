@@ -28,14 +28,14 @@ data:
   LOG_FORMAT: "json"
   LOG_LEVEL: "info"
 ---
-# API keys and webhook URLs. Set them out-of-band (or from the Settings UI,
-# which persists here) instead of committing real values:
+# API keys and webhook URLs. Set them out-of-band, or from the Settings UI —
+# which persists to the *-overrides objects below, not here, so re-applying
+# this file is always safe and never clobbers a saved setting:
 #   kubectl -n kentinel create secret generic agent-secrets \
 #     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
 # REPLACE_ME placeholders are treated as "not configured" so
 # `kubectl apply -f deploy/k8s/` works for the ollama provider with no
-# secrets at all. NOTE: re-applying this file overwrites values saved from
-# the Settings UI — apply it selectively after first install.
+# secrets at all.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -50,3 +50,23 @@ stringData:
   DISCORD_WEBHOOK_URL: ""
   SLACK_WEBHOOK_URL: ""
   TEAMS_WEBHOOK_URL: ""
+---
+# Settings-UI write-back targets. The server only ever writes here, never to
+# the ConfigMap/Secret above, so `kubectl apply -f deploy/k8s/` never
+# overwrites a setting saved from the UI. 03-agent.yaml layers these on top
+# of the objects above via envFrom order: a saved key wins, anything never
+# touched from the UI keeps following the values above.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config-overrides
+  namespace: kentinel
+data: {}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agent-secrets-overrides
+  namespace: kentinel
+type: Opaque
+data: {}

@@ -222,8 +222,9 @@ Where the tokens go:
   LLM calls with a few KB of tool results each.
 
 Every cost lever is an environment variable on the agent — no code changes or
-rebuilds, just update the config (k8s: the `agent-config` ConfigMap; Docker:
-compose environment) and restart the agent:
+rebuilds, just update the config (k8s: the `agent-config` ConfigMap, or
+`agent-config-overrides` if you've set the same field from the Settings UI —
+overrides win; Docker: compose environment) and restart the agent:
 
 | Lever | Effect on cost |
 | --- | --- |

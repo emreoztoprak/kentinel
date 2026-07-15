@@ -15,11 +15,11 @@ import (
 func TestPersistAgentConfig(t *testing.T) {
 	clientset := fake.NewSimpleClientset(
 		&corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: agentConfigMapName, Namespace: "kentinel"},
+			ObjectMeta: metav1.ObjectMeta{Name: agentConfigOverridesName, Namespace: "kentinel"},
 			Data:       map[string]string{"LLM_PROVIDER": "ollama", "LOG_FORMAT": "json"},
 		},
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: agentSecretName, Namespace: "kentinel"},
+			ObjectMeta: metav1.ObjectMeta{Name: agentSecretOverridesName, Namespace: "kentinel"},
 			Data:       map[string][]byte{"ANTHROPIC_API_KEY": []byte("REPLACE_ME")},
 		},
 	)
@@ -38,7 +38,7 @@ func TestPersistAgentConfig(t *testing.T) {
 		t.Fatalf("persistAgentConfig failed: %v", err)
 	}
 
-	cm, _ := clientset.CoreV1().ConfigMaps("kentinel").Get(context.Background(), agentConfigMapName, metav1.GetOptions{})
+	cm, _ := clientset.CoreV1().ConfigMaps("kentinel").Get(context.Background(), agentConfigOverridesName, metav1.GetOptions{})
 	want := map[string]string{
 		"LLM_PROVIDER":          "anthropic",
 		"LLM_MODEL":             "claude-opus-4-8",
@@ -55,7 +55,7 @@ func TestPersistAgentConfig(t *testing.T) {
 		t.Error("unrelated ConfigMap keys must be preserved")
 	}
 
-	secret, _ := clientset.CoreV1().Secrets("kentinel").Get(context.Background(), agentSecretName, metav1.GetOptions{})
+	secret, _ := clientset.CoreV1().Secrets("kentinel").Get(context.Background(), agentSecretOverridesName, metav1.GetOptions{})
 	if string(secret.Data["ANTHROPIC_API_KEY"]) != "sk-ant-new" {
 		t.Errorf("Secret key not updated: %q", secret.Data["ANTHROPIC_API_KEY"])
 	}
@@ -66,8 +66,8 @@ func TestPersistAgentConfig(t *testing.T) {
 
 func TestPersistAPIKeyGoesToProviderSpecificSecretKey(t *testing.T) {
 	clientset := fake.NewSimpleClientset(
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: agentConfigMapName, Namespace: "ns"}},
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: agentSecretName, Namespace: "ns"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: agentConfigOverridesName, Namespace: "ns"}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: agentSecretOverridesName, Namespace: "ns"}},
 	)
 	srv := &Server{k8s: &k8s.Client{Clientset: clientset}, log: slog.Default()}
 
@@ -78,7 +78,7 @@ func TestPersistAPIKeyGoesToProviderSpecificSecretKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("persistAgentConfig failed: %v", err)
 	}
-	secret, _ := clientset.CoreV1().Secrets("ns").Get(context.Background(), agentSecretName, metav1.GetOptions{})
+	secret, _ := clientset.CoreV1().Secrets("ns").Get(context.Background(), agentSecretOverridesName, metav1.GetOptions{})
 	if string(secret.Data["GEMINI_API_KEY"]) != "AIza-test" {
 		t.Errorf("gemini key must land in GEMINI_API_KEY: %v", secret.Data)
 	}
@@ -89,9 +89,9 @@ func TestPersistAPIKeyGoesToProviderSpecificSecretKey(t *testing.T) {
 
 func TestPersistAgentConfigSkipsSecretWithoutKey(t *testing.T) {
 	clientset := fake.NewSimpleClientset(
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: agentConfigMapName, Namespace: "ns"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: agentConfigOverridesName, Namespace: "ns"}},
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: agentSecretName, Namespace: "ns"},
+			ObjectMeta: metav1.ObjectMeta{Name: agentSecretOverridesName, Namespace: "ns"},
 			Data:       map[string][]byte{"ANTHROPIC_API_KEY": []byte("keep-me")},
 		},
 	)
@@ -104,7 +104,7 @@ func TestPersistAgentConfigSkipsSecretWithoutKey(t *testing.T) {
 		t.Fatalf("persistAgentConfig failed: %v", err)
 	}
 
-	secret, _ := clientset.CoreV1().Secrets("ns").Get(context.Background(), agentSecretName, metav1.GetOptions{})
+	secret, _ := clientset.CoreV1().Secrets("ns").Get(context.Background(), agentSecretOverridesName, metav1.GetOptions{})
 	if string(secret.Data["ANTHROPIC_API_KEY"]) != "keep-me" {
 		t.Error("secret must not change when no new key is provided")
 	}

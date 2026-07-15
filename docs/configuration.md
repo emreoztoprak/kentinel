@@ -15,8 +15,11 @@ How it works:
 - Changes **apply immediately** in the running agent — no pod restart, the
   insight history is kept, and a fresh review runs right away.
 - In **k8s mode** the server also writes the values back to the
-  `agent-config` ConfigMap (and a new API key into the `agent-secrets`
-  Secret), so they survive pod restarts.
+  `agent-config-overrides` ConfigMap (and a new API key into the
+  `agent-secrets-overrides` Secret), so they survive pod restarts. These are
+  separate objects from the chart/manifest-declared `agent-config` /
+  `agent-secrets` — a saved setting always wins and is never overwritten by
+  a subsequent `helm upgrade` or `kubectl apply`.
 - In **Docker / local mode** there is nothing to write back to — changes last
   until the agent restarts, then env values apply again. The UI says which
   case you're in after every save.
@@ -88,7 +91,7 @@ Notes:
 
 All four work the same way — pick the provider, provide its API key
 (easiest: Settings page, which stores it write-only and persists it to the
-`agent-secrets` Secret in k8s mode), optionally pick a model from the
+`agent-secrets-overrides` Secret in k8s mode), optionally pick a model from the
 dropdown:
 
 | Provider | Get a key at | Default model | Notes |

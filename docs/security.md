@@ -54,13 +54,17 @@ With `LLM_PROVIDER=ollama`, nothing leaves your infrastructure.
   but are **write-only**: `GET /api/v1/agent/config` only ever reports
   set/not-set booleans. The agent holds the values in memory; in k8s mode
   the **server** (not the agent) persists newly entered values into the
-  `agent-secrets` Secret.
+  `agent-secrets-overrides` Secret — a separate object from the one below,
+  so a value saved from the UI is never clobbered by a `helm upgrade` or
+  `kubectl apply` (see [deployment.md](deployment.md)).
   Remember the flip side: since the UI has no auth, anyone who can reach it
   can *replace* the key or redirect the agent to their own Ollama host — one
   more reason to keep this behind `kubectl port-forward`.
-- The `agent-secrets` Secret holds your LLM API keys and webhook URLs;
-  replace the committed `REPLACE_ME` placeholders out-of-band (or via the
-  Settings UI) and never commit real values.
+- The `agent-secrets` Secret holds the install-time LLM API keys and webhook
+  URLs (chart/manifest defaults); replace the committed `REPLACE_ME`
+  placeholders out-of-band and never commit real values. Anything set later
+  from the Settings UI lands in `agent-secrets-overrides` instead and takes
+  precedence.
 - The UI's Secret YAML view shows base64 data as stored — treat UI access as
   secret access when deciding who may reach the port.
 

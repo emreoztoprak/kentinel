@@ -29,6 +29,10 @@ spec:
           env:
             - name: AGENT_URL
               value: http://agent.kentinel.svc:8090
+            - name: AGENT_CONFIGMAP_OVERRIDES_NAME
+              value: agent-config-overrides
+            - name: AGENT_SECRET_OVERRIDES_NAME
+              value: agent-secrets-overrides
             - name: LOG_FORMAT
               value: json
           readinessProbe:
