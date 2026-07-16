@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/emreoztoprak/kentinel/internal/llm"
+	"github.com/emreoztoprak/kentinel/internal/safehttp"
 )
 
 // Provider implements llm.Provider against an Ollama server.
@@ -29,8 +30,9 @@ func New(host, model string) *Provider {
 	return &Provider{
 		host:  strings.TrimRight(host, "/"),
 		model: model,
-		// Local models can be slow, especially on first load.
-		client: &http.Client{Timeout: 5 * time.Minute},
+		// Local models can be slow, especially on first load. User-supplied
+		// host, so the dialer blocks cloud-metadata targets.
+		client: safehttp.Client(5 * time.Minute),
 	}
 }
 
@@ -123,7 +125,8 @@ func (p *Provider) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 		return nil, fmt.Errorf("ollama: reading response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, truncate(string(raw), 500))
+		// No response-body echo: the host is user-supplied (SSRF hygiene).
+		return nil, fmt.Errorf("ollama: HTTP %d from %s", resp.StatusCode, p.host)
 	}
 
 	var parsed chatResponse
@@ -180,13 +183,6 @@ func convertMessages(system string, messages []llm.Message) []chatMessage {
 	return out
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
-}
-
 // ListModels returns the models installed on an Ollama server (GET /api/tags).
 // Used by the Settings UI to populate the model dropdown.
 func ListModels(ctx context.Context, host string) ([]string, error) {
@@ -196,8 +192,7 @@ func ListModels(ctx context.Context, host string) ([]string, error) {
 		return nil, fmt.Errorf("ollama: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := safehttp.Client(10 * time.Second).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ollama: request to %s failed (is Ollama running?): %w", host, err)
 	}
@@ -208,7 +203,8 @@ func ListModels(ctx context.Context, host string) ([]string, error) {
 		return nil, fmt.Errorf("ollama: reading response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+		// No response-body echo: the host is user-supplied (SSRF hygiene).
+		return nil, fmt.Errorf("ollama: HTTP %d from %s", resp.StatusCode, host)
 	}
 
 	var parsed struct {

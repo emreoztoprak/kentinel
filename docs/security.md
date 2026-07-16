@@ -110,6 +110,18 @@ is deliberately no live sync between the two.
   in the agent's local database, never stored as plaintext or base64 — see
   Secret handling above. The database and its WAL sidecars are owner-only
   (0600), like the encryption key next to them.
+- The agent reaches several **user-supplied URLs** (the Ollama host, the
+  Prometheus URL, and notification webhooks). Because those requests
+  originate from the agent's in-cluster network position, they're a
+  server-side request forgery (SSRF) surface. Two guardrails limit it: the
+  outbound dialer refuses connections to link-local / cloud-metadata
+  addresses (`169.254.169.254` and friends — checked on the *resolved* IP,
+  so DNS rebinding doesn't help), keeping the node's cloud IAM credentials
+  off-limits even though the agent has no Kubernetes secrets access; and no
+  upstream response body is ever echoed into a UI-visible error, so a
+  misconfigured URL can't be turned into a read primitive. Ordinary
+  cluster-private addresses stay reachable — the bundled Ollama and
+  Prometheus need them.
 - The dashboard's update-check card treats the GitHub API response as
   untrusted: the version shown (and embedded in the suggested `helm upgrade`
   command) is rebuilt from parsed semver components — a hostile release tag

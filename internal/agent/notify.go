@@ -5,13 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/emreoztoprak/kentinel/internal/safehttp"
 )
+
+// webhookClient sends notifications to user-supplied webhook URLs, so its
+// dialer blocks cloud-metadata addresses (SSRF hardening).
+var webhookClient = safehttp.Client(15 * time.Second)
 
 // Notification is one alert about a cluster status change.
 type Notification struct {
@@ -211,15 +216,15 @@ func sendDiscord(ctx context.Context, webhook string, n Notification) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("discord webhook request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 500))
-		return fmt.Errorf("discord webhook returned HTTP %d: %s", resp.StatusCode, string(body))
+		// No response-body echo: webhook URLs are user-supplied (SSRF hygiene).
+		return fmt.Errorf("discord webhook returned HTTP %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -376,15 +381,15 @@ func postJSON(ctx context.Context, channel, webhook string, payload interface{})
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s webhook request failed: %w", channel, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 500))
-		return fmt.Errorf("%s webhook returned HTTP %d: %s", channel, resp.StatusCode, string(body))
+		// No response-body echo: webhook URLs are user-supplied (SSRF hygiene).
+		return fmt.Errorf("%s webhook returned HTTP %d", channel, resp.StatusCode)
 	}
 	return nil
 }

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/emreoztoprak/kentinel/internal/safehttp"
 )
 
 // promClient is a tiny Prometheus HTTP API client (instant queries only —
@@ -24,7 +26,8 @@ type promClient struct {
 func newPromClient(baseURL string) *promClient {
 	return &promClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 15 * time.Second},
+		// User-supplied URL: block cloud-metadata targets.
+		client: safehttp.Client(15 * time.Second),
 	}
 }
 
@@ -65,7 +68,11 @@ func (p *promClient) Query(ctx context.Context, promql string) ([]promSample, er
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, fmt.Errorf("prometheus: HTTP %d, undecodable response: %s", resp.StatusCode, truncateRunes(string(raw), 300))
+		// Deliberately does NOT echo the response body: this URL is
+		// user-supplied, and reflecting an arbitrary upstream's body into a
+		// UI-visible error would turn a misconfigured URL into an SSRF read
+		// primitive.
+		return nil, fmt.Errorf("prometheus: HTTP %d — response was not valid JSON (is %s actually a Prometheus API endpoint?)", resp.StatusCode, p.baseURL)
 	}
 	if parsed.Status != "success" {
 		return nil, fmt.Errorf("prometheus: %s", parsed.Error)
