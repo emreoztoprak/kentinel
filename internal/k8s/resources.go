@@ -63,8 +63,10 @@ func (c *Client) ListResources(ctx context.Context, kind, namespace string) ([]R
 }
 
 // GetResource fetches one resource including its cleaned YAML manifest.
-// Secret data values are masked; the raw values never leave the server on
-// this endpoint (the YAML is what the edit view shows).
+// NOTE: Secret data is returned as stored (base64) — the YAML view doubles
+// as the editor, and this is deliberately documented in docs/security.md
+// ("treat UI access as secret access"). Anyone changing that tradeoff must
+// change both.
 func (c *Client) GetResource(ctx context.Context, kind, namespace, name string) (*ResourceDetail, error) {
 	info, err := LookupKind(kind)
 	if err != nil {

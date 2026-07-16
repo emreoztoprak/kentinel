@@ -20,13 +20,10 @@ function parseSemver(v: string): [number, number, number] | null {
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
-function isNewer(latest: string, current: string): boolean {
-  const a = parseSemver(latest);
-  const b = parseSemver(current);
-  if (!a || !b) return false;
+function isNewer(latest: [number, number, number], current: [number, number, number]): boolean {
   for (let i = 0; i < 3; i++) {
-    if (a[i] > b[i]) return true;
-    if (a[i] < b[i]) return false;
+    if (latest[i] > current[i]) return true;
+    if (latest[i] < current[i]) return false;
   }
   return false;
 }
@@ -56,8 +53,18 @@ export default function UpdateStatus() {
   // this is a convenience feature, not a health signal.
   if (releaseQuery.isLoading || releaseQuery.isError || !releaseQuery.data) return null;
 
-  const latest = releaseQuery.data.tag_name;
-  if (!isNewer(latest, current)) {
+  // The GitHub API response is not fully trusted: everything user-visible
+  // is rebuilt from the *parsed* semver components, never the raw tag
+  // string, so a hostile tag name can't smuggle shell text into the
+  // copy-paste command below. Same for the release URL: only a plain
+  // github.com release link is accepted.
+  const latestParsed = parseSemver(releaseQuery.data.tag_name);
+  const currentParsed = parseSemver(current);
+  if (!latestParsed || !currentParsed) return null;
+  const releaseUrl = releaseQuery.data.html_url;
+  const safeReleaseUrl = /^https:\/\/github\.com\//.test(releaseUrl) ? releaseUrl : "";
+
+  if (!isNewer(latestParsed, currentParsed)) {
     return (
       <p className="mb-6 text-xs text-slate-400">
         Kentinel v{current} — you're up to date.
@@ -69,8 +76,8 @@ export default function UpdateStatus() {
     <div className="mb-6">
       <UpdateAvailableCard
         current={current}
-        latest={latest}
-        releaseUrl={releaseQuery.data.html_url}
+        latestVersion={latestParsed.join(".")}
+        releaseUrl={safeReleaseUrl}
         namespace={serverQuery.data?.namespace || "kentinel"}
       />
     </div>
@@ -79,16 +86,15 @@ export default function UpdateStatus() {
 
 function UpdateAvailableCard({
   current,
-  latest,
+  latestVersion,
   releaseUrl,
   namespace,
 }: {
   current: string;
-  latest: string;
-  releaseUrl: string;
+  latestVersion: string; // rebuilt from parsed semver — never the raw tag
+  releaseUrl: string; // "" when the API's html_url failed validation
   namespace: string;
 }) {
-  const latestVersion = latest.replace(/^v/, "");
   const command = `helm upgrade kentinel oci://ghcr.io/emreoztoprak/charts/kentinel \\
   --version ${latestVersion} \\
   -n ${namespace} \\
@@ -105,14 +111,16 @@ function UpdateAvailableCard({
             v{current} → v{latestVersion}
           </p>
         </div>
-        <a
-          href={releaseUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
-        >
-          Release notes →
-        </a>
+        {releaseUrl && (
+          <a
+            href={releaseUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            Release notes →
+          </a>
+        )}
       </div>
 
       <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">

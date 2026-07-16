@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -148,6 +149,16 @@ func openInsightDB(path string) (*sql.DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
+	}
+
+	// The driver creates files 0644; tighten to owner-only like the
+	// .settings.key sibling — the database holds the encrypted settings
+	// blob and cluster insight history, and nothing else needs to read it.
+	// After the schema write the -wal/-shm sidecars exist too.
+	for _, f := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(f, 0o600); err != nil && !os.IsNotExist(err) {
+			slog.Warn("tightening database file permissions failed", "file", f, "error", err)
+		}
 	}
 	return db, nil
 }

@@ -108,7 +108,17 @@ is deliberately no live sync between the two.
   networks.
 - Settings saved from the UI (API keys, webhook URLs) are encrypted at rest
   in the agent's local database, never stored as plaintext or base64 — see
-  Secret handling above.
+  Secret handling above. The database and its WAL sidecars are owner-only
+  (0600), like the encryption key next to them.
+- The dashboard's update-check card treats the GitHub API response as
+  untrusted: the version shown (and embedded in the suggested `helm upgrade`
+  command) is rebuilt from parsed semver components — a hostile release tag
+  name can't smuggle shell text into your clipboard — and the release link
+  is only rendered for a plain `https://github.com/` URL.
+- The release pipeline pins all third-party actions to commit SHAs, and
+  validates the release version against a strict pattern before it can
+  reach any shell or artifact name — a crafted tag or workflow input fails
+  the build instead of executing.
 
 ## Reporting
 
