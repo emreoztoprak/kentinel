@@ -278,3 +278,26 @@ func TestSettingsPersistentFalseWithoutKey(t *testing.T) {
 		t.Fatalf("LoadSettings on memory-only store: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
 }
+
+func TestSetRetentionDaysPrunes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "insights.db")
+	store := NewPersistentStore(path, 90, 20, discardLog())
+
+	now := time.Now().UTC()
+	store.Add(sampleInsight(StatusHealthy, now.Add(-10*24*time.Hour))) // 10 days old
+	store.Add(sampleInsight(StatusHealthy, now))                       // fresh
+
+	// Tighten retention to 5 days, then trigger a prune via a new insert.
+	store.SetRetentionDays(5)
+	store.Add(sampleInsight(StatusWarning, now))
+
+	history, err := store.History(HistoryQuery{Limit: 500})
+	if err != nil {
+		t.Fatalf("History failed: %v", err)
+	}
+	for _, in := range history {
+		if in.CreatedAt.Before(now.Add(-5 * 24 * time.Hour)) {
+			t.Errorf("row from %s should have been pruned under 5-day retention", in.CreatedAt)
+		}
+	}
+}

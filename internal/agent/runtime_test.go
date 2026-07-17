@@ -292,3 +292,55 @@ func TestPickOllamaModel(t *testing.T) {
 		})
 	}
 }
+
+func TestRetentionAppliesAndPersists(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	store := NewPersistentStore(dbPath, 90, 20, slog.Default())
+
+	rt, err := NewRuntime(baseConfig(), store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime failed: %v", err)
+	}
+	// Default should surface in the view.
+	if got := rt.View().InsightRetentionDays; got != 90 {
+		t.Errorf("default retention = %d, want 90", got)
+	}
+
+	if _, err := rt.Apply(SettingsUpdate{
+		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "10m",
+		MonitorEnabled: true, InsightRetentionDays: 30,
+	}); err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+	if got := rt.View().InsightRetentionDays; got != 30 {
+		t.Errorf("retention after Apply = %d, want 30", got)
+	}
+
+	// Survives a restart against the same store.
+	restarted, err := NewRuntime(baseConfig(), store, slog.Default())
+	if err != nil {
+		t.Fatalf("NewRuntime (restart) failed: %v", err)
+	}
+	if got := restarted.View().InsightRetentionDays; got != 30 {
+		t.Errorf("retention did not survive restart = %d, want 30", got)
+	}
+}
+
+func TestRetentionValidationBounds(t *testing.T) {
+	rt := testRuntime(t)
+	for _, bad := range []int{-5, 4000} {
+		if _, err := rt.Apply(SettingsUpdate{
+			Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "10m",
+			MonitorEnabled: true, InsightRetentionDays: bad,
+		}); err == nil && bad == 4000 {
+			t.Errorf("retention %d should be rejected (over max)", bad)
+		}
+	}
+	// 0 must be treated as "leave unchanged", not rejected.
+	if _, err := rt.Apply(SettingsUpdate{
+		Provider: "ollama", OllamaHost: "http://x", ReviewInterval: "10m",
+		MonitorEnabled: true, InsightRetentionDays: 0,
+	}); err != nil {
+		t.Errorf("retention 0 should be accepted (leave unchanged): %v", err)
+	}
+}

@@ -90,7 +90,8 @@ prefix stripped.
   "slackWebhookUrl": "https://hooks.slack.com/services/...",   // optional, write-only
   "teamsWebhookUrl": "https://...",                            // optional, write-only (Workflows webhook)
   "notifyMinSeverity": "warning",  // "warning" | "critical"
-  "prometheusUrl": "http://prometheus.kentinel.svc:9090" // plain field; empty DISABLES metrics
+  "prometheusUrl": "http://prometheus.kentinel.svc:9090", // plain field; empty DISABLES metrics
+  "insightRetentionDays": 90            // review-history retention, 1–3650; 0 = leave unchanged
 }
 ```
 

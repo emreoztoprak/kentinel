@@ -60,6 +60,11 @@ const (
 	// model even when the server can't be queried. Small enough for modest
 	// clusters (~1.5GB RAM) and tool-calling capable.
 	DefaultOllamaModel = "qwen3:0.6b"
+
+	// Insight-history retention bounds (days). The default matches the k8s
+	// manifests / chart; the max is a sanity cap (~10 years).
+	DefaultInsightRetentionDays = 90
+	MaxInsightRetentionDays     = 3650
 )
 
 // APIKeyEnvNames maps each cloud provider to its API key env var (also the

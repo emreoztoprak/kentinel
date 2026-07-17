@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver: works in CGO_ENABLED=0 distroless images
@@ -27,10 +28,13 @@ type Store struct {
 	insights []Insight // ring buffer, newest first
 	capacity int
 
-	db          *sql.DB
-	retention   time.Duration
-	settingsKey []byte // AES-256 key protecting the settings table; nil disables settings persistence
-	log         *slog.Logger
+	db *sql.DB
+	// retentionNanos is the pruning window in nanoseconds. Atomic because
+	// pruning runs on the monitor goroutine (Add) while SetRetentionDays runs
+	// on the settings-save goroutine.
+	retentionNanos atomic.Int64
+	settingsKey    []byte // AES-256 key protecting the settings table; nil disables settings persistence
+	log            *slog.Logger
 }
 
 // HistoryQuery filters the history listing.
@@ -60,10 +64,7 @@ func NewStore(capacity int) *Store {
 func NewPersistentStore(path string, retentionDays int, capacity int, log *slog.Logger) *Store {
 	s := NewStore(capacity)
 	s.log = log
-	if retentionDays <= 0 {
-		retentionDays = 90
-	}
-	s.retention = time.Duration(retentionDays) * 24 * time.Hour
+	s.SetRetentionDays(retentionDays)
 
 	db, err := openInsightDB(path)
 	if err != nil {
@@ -94,6 +95,15 @@ func NewPersistentStore(path string, retentionDays int, capacity int, log *slog.
 
 // Persistent reports whether insights survive restarts.
 func (s *Store) Persistent() bool { return s.db != nil }
+
+// SetRetentionDays updates the pruning window, live. Non-positive values fall
+// back to the 90-day default. Takes effect on the next insert.
+func (s *Store) SetRetentionDays(days int) {
+	if days <= 0 {
+		days = 90
+	}
+	s.retentionNanos.Store(int64(time.Duration(days) * 24 * time.Hour))
+}
 
 // SettingsPersistent reports whether settings survive restarts (requires
 // both a working database and a usable encryption key).
@@ -193,7 +203,7 @@ func (s *Store) Add(insight Insight) {
 	}
 
 	// Retention pruning piggybacks on the insert; indexed and cheap.
-	cutoff := time.Now().Add(-s.retention).UTC().Format(time.RFC3339Nano)
+	cutoff := time.Now().Add(-time.Duration(s.retentionNanos.Load())).UTC().Format(time.RFC3339Nano)
 	if _, err := s.db.Exec(`DELETE FROM insights WHERE created_at < ?`, cutoff); err != nil {
 		s.log.Warn("pruning old insights failed", "error", err)
 	}
@@ -335,7 +345,8 @@ type persistedSettings struct {
 	TeamsWebhook         string `json:"teamsWebhook"`
 	NotifyMinSeverity    string `json:"notifyMinSeverity"`
 
-	PrometheusURL string `json:"prometheusUrl"`
+	PrometheusURL        string `json:"prometheusUrl"`
+	InsightRetentionDays int    `json:"insightRetentionDays"`
 }
 
 func toPersistedSettings(s Settings) persistedSettings {
@@ -350,7 +361,8 @@ func toPersistedSettings(s Settings) persistedSettings {
 		TeamsWebhook:         s.TeamsWebhook,
 		NotifyMinSeverity:    s.NotifyMinSeverity,
 
-		PrometheusURL: s.PrometheusURL,
+		PrometheusURL:        s.PrometheusURL,
+		InsightRetentionDays: s.InsightRetentionDays,
 	}
 }
 
@@ -369,7 +381,8 @@ func (p persistedSettings) toSettings() (Settings, error) {
 		TeamsWebhook:         p.TeamsWebhook,
 		NotifyMinSeverity:    p.NotifyMinSeverity,
 
-		PrometheusURL: p.PrometheusURL,
+		PrometheusURL:        p.PrometheusURL,
+		InsightRetentionDays: p.InsightRetentionDays,
 	}, nil
 }
 

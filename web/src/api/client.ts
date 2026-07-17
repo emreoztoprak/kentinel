@@ -132,6 +132,7 @@ export interface AgentConfig {
   teamsWebhookSet: boolean;
   notifyMinSeverity: string;
   prometheusUrl: string;
+  insightRetentionDays: number;
   // Whether this state survives a pod restart (a working SQLite file +
   // encryption key in the agent). false in Docker mode without
   // INSIGHT_DB_PATH — the change still applies live either way.
@@ -151,6 +152,7 @@ export interface AgentConfigUpdate {
   teamsWebhookUrl?: string; // write-only; empty = keep existing
   notifyMinSeverity: string;
   prometheusUrl: string; // empty disables metrics
+  insightRetentionDays: number; // 0 = leave unchanged
 }
 
 export interface ServerSettings {

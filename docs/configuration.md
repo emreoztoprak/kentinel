@@ -61,7 +61,7 @@ read-only in the UI — change them in the manifests / compose file.
 | `TEAMS_WEBHOOK_URL` | — | Microsoft Teams Workflows webhook (Adaptive Card payload). Write-only in the API/UI |
 | `NOTIFY_MIN_SEVERITY` | `warning` | `warning` = alert on any degradation; `critical` = only page for outages (recoveries from qualifying states still notify) |
 | `INSIGHT_DB_PATH` | *(empty)* | SQLite file for persistent review history (e.g. `/data/insights.db`). Empty = in-memory only, history lost on restart. The k8s manifests set this and mount a PVC |
-| `INSIGHT_RETENTION_DAYS` | `90` | Reviews older than this are pruned from the database |
+| `INSIGHT_RETENTION_DAYS` | `90` | Reviews older than this are pruned from the database. Seeds the first-boot default; changeable at runtime from the Settings page (1–3650 days) |
 | `PROMETHEUS_URL` | *(empty)* | Prometheus base URL for the agent's metrics tools (usage, throttling). The k8s manifests point this at the bundled Prometheus; set your own to reuse an existing one. Empty = metrics tools disabled |
 | `KUBECONFIG_PATH` | *(auto)* | Same resolution as the server |
 | `LOG_LEVEL` / `LOG_FORMAT` | `info` / `text` | Same as the server |

@@ -35,7 +35,8 @@ type Settings struct {
 	TeamsWebhook         string
 	NotifyMinSeverity    string // "warning" or "critical"
 
-	PrometheusURL string // empty = metrics tools disabled
+	PrometheusURL        string // empty = metrics tools disabled
+	InsightRetentionDays int    // review history kept this many days
 }
 
 // SettingsView is the safe, serializable form of Settings — secrets are
@@ -54,7 +55,8 @@ type SettingsView struct {
 	TeamsWebhookSet      bool   `json:"teamsWebhookSet"`
 	NotifyMinSeverity    string `json:"notifyMinSeverity"`
 
-	PrometheusURL string `json:"prometheusUrl"`
+	PrometheusURL        string `json:"prometheusUrl"`
+	InsightRetentionDays int    `json:"insightRetentionDays"`
 
 	// Persistent reports whether this settings state survives a pod
 	// restart (a working SQLite file + encryption key). false in Docker
@@ -82,6 +84,9 @@ type SettingsUpdate struct {
 
 	// PrometheusURL is plain (not write-only): empty string DISABLES metrics.
 	PrometheusURL string `json:"prometheusUrl"`
+	// InsightRetentionDays: how long review history is kept. 0 = leave the
+	// current value unchanged (so older UIs that omit it don't reset it).
+	InsightRetentionDays int `json:"insightRetentionDays"`
 }
 
 // Runtime holds the agent's mutable configuration and the active LLM
@@ -120,7 +125,8 @@ func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, er
 		TeamsWebhook:         cfg.TeamsWebhook,
 		NotifyMinSeverity:    cfg.NotifyMinSeverity,
 
-		PrometheusURL: cfg.PrometheusURL,
+		PrometheusURL:        cfg.PrometheusURL,
+		InsightRetentionDays: cfg.InsightRetentionDays,
 	}
 	if settings.Model == "" {
 		settings.Model = DefaultModel(settings.Provider)
@@ -142,10 +148,20 @@ func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, er
 			}
 		}
 	}
+	if settings.InsightRetentionDays <= 0 {
+		// Old records saved before retention was configurable, or a bare cfg
+		// without the env set.
+		settings.InsightRetentionDays = config.DefaultInsightRetentionDays
+	}
 
 	provider, err := buildProvider(settings)
 	if err != nil {
 		return nil, err
+	}
+	// Sync the (possibly persisted) retention to the store, which owns
+	// pruning. Safe here: the monitor loop hasn't started inserting yet.
+	if store != nil {
+		store.SetRetentionDays(settings.InsightRetentionDays)
 	}
 	return &Runtime{
 		settings: settings,
@@ -187,8 +203,9 @@ func (r *Runtime) View() SettingsView {
 		TeamsWebhookSet:      r.settings.TeamsWebhook != "",
 		NotifyMinSeverity:    r.settings.NotifyMinSeverity,
 
-		PrometheusURL: r.settings.PrometheusURL,
-		Persistent:    r.store != nil && r.store.SettingsPersistent(),
+		PrometheusURL:        r.settings.PrometheusURL,
+		InsightRetentionDays: r.settings.InsightRetentionDays,
+		Persistent:           r.store != nil && r.store.SettingsPersistent(),
 	}
 }
 
@@ -257,11 +274,13 @@ func (r *Runtime) Apply(update SettingsUpdate) (SettingsView, error) {
 
 	if r.store != nil {
 		r.store.SaveSettings(next)
+		r.store.SetRetentionDays(next.InsightRetentionDays)
 	}
 
 	r.log.Info("settings updated",
 		"provider", next.Provider, "model", next.Model,
-		"interval", next.ReviewInterval.String(), "monitor", next.MonitorEnabled)
+		"interval", next.ReviewInterval.String(), "monitor", next.MonitorEnabled,
+		"retentionDays", next.InsightRetentionDays)
 
 	select {
 	case r.changed <- struct{}{}:
@@ -308,6 +327,15 @@ func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
 	}
 
 	next.PrometheusURL = strings.TrimRight(update.PrometheusURL, "/")
+
+	// 0 means "leave unchanged" so a client that omits the field doesn't
+	// reset retention (next already holds the current value).
+	if update.InsightRetentionDays > 0 {
+		next.InsightRetentionDays = update.InsightRetentionDays
+	}
+	if next.InsightRetentionDays <= 0 {
+		next.InsightRetentionDays = config.DefaultInsightRetentionDays
+	}
 
 	next.Model = update.Model
 	if next.Model == "" {
@@ -361,6 +389,9 @@ func validateSettings(s Settings) error {
 	}
 	if s.NotificationsEnabled && s.DiscordWebhook == "" && s.SlackWebhook == "" && s.TeamsWebhook == "" {
 		return fmt.Errorf("enabling notifications requires at least one webhook URL (Discord, Slack, or Teams)")
+	}
+	if s.InsightRetentionDays < 1 || s.InsightRetentionDays > config.MaxInsightRetentionDays {
+		return fmt.Errorf("insightRetentionDays %d is out of range (1–%d)", s.InsightRetentionDays, config.MaxInsightRetentionDays)
 	}
 	return nil
 }

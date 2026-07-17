@@ -84,6 +84,7 @@ function AgentSettingsForm({
     teamsWebhookUrl: "",
     notifyMinSeverity: config.notifyMinSeverity || "warning",
     prometheusUrl: config.prometheusUrl,
+    insightRetentionDays: config.insightRetentionDays,
   });
   const [savedNote, setSavedNote] = useState("");
 
@@ -99,6 +100,7 @@ function AgentSettingsForm({
       notificationsEnabled: config.notificationsEnabled,
       notifyMinSeverity: config.notifyMinSeverity || "warning",
       prometheusUrl: config.prometheusUrl,
+      insightRetentionDays: config.insightRetentionDays,
     }));
   }, [config]);
 
@@ -227,6 +229,22 @@ function AgentSettingsForm({
             />
             enabled
           </label>
+        </Field>
+        <Field
+          label="Review history retention"
+          hint="How long past reviews are kept in the database (1–3650 days). Older ones are pruned automatically."
+        >
+          <div className="flex items-center gap-2">
+            <input
+              className="input w-24"
+              type="number"
+              min={1}
+              max={3650}
+              value={form.insightRetentionDays || ""}
+              onChange={(e) => set("insightRetentionDays", Number(e.target.value))}
+            />
+            <span className="text-sm text-slate-500 dark:text-slate-400">days</span>
+          </div>
         </Field>
       </div>
 

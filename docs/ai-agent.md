@@ -145,8 +145,12 @@ Implementation notes (and why SQLite is not a bottleneck here):
 - **Use block storage for the PVC** (the default on most clouds and
   minikube). Avoid NFS-backed storage classes — SQLite file locking is
   unreliable on network filesystems.
-- Retention: rows older than `INSIGHT_RETENTION_DAYS` (default 90) are
-  pruned automatically. At a 5m interval, 90 days ≈ 26k rows ≈ a few MB.
+- Retention: rows older than the configured window (default 90 days) are
+  pruned automatically on each insert. At a 5m interval, 90 days ≈ 26k rows
+  ≈ a few MB — well within the 1Gi `agent-data` PVC. Change it any time from
+  the Settings page (**Review history retention**, 1–3650 days); the change
+  applies live and, like every other setting, persists across restarts.
+  `INSIGHT_RETENTION_DAYS` only seeds the value on the agent's first boot.
 - If the database cannot be opened the agent logs a warning and falls back
   to memory-only — persistence never takes the agent down.
 
