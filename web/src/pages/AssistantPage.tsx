@@ -11,6 +11,47 @@ interface ChatEntry {
   done: boolean;
 }
 
+// describeTool turns a raw tool call ("get_pod_logs {\"namespace\":\"app\",
+// \"pod\":\"web-1\"}") into a readable activity line ("Reading logs for
+// app/web-1"). Users shouldn't see internal function names; this keeps the
+// "what's the agent doing" signal without the plumbing.
+function describeTool(raw: string): string {
+  const space = raw.indexOf(" ");
+  const name = space === -1 ? raw : raw.slice(0, space);
+  let args: Record<string, unknown> = {};
+  if (space !== -1) {
+    try {
+      args = JSON.parse(raw.slice(space + 1));
+    } catch {
+      // Non-JSON args — just use the verb below with no target.
+    }
+  }
+  const str = (v: unknown) => (typeof v === "string" && v ? v : "");
+  const ns = str(args.namespace);
+  const target = [ns, str(args.pod) || str(args.name)].filter(Boolean).join("/");
+  const inNs = ns ? ` in ${ns}` : "";
+  const forTarget = target ? ` for ${target}` : inNs;
+
+  switch (name) {
+    case "get_cluster_overview":
+      return "Checking the cluster overview";
+    case "list_resources":
+      return `Listing ${str(args.kind) || "resources"}${inNs}`;
+    case "get_resource":
+      return `Inspecting ${str(args.kind) || "a resource"}${target ? ` ${target}` : inNs}`;
+    case "get_pod_logs":
+      return `Reading logs${forTarget}`;
+    case "get_events":
+      return `Checking events${inNs}`;
+    case "get_resource_usage":
+      return `Checking resource usage${inNs}`;
+    case "query_metrics":
+      return "Querying metrics";
+    default:
+      return "Inspecting the cluster";
+  }
+}
+
 const SUGGESTIONS = [
   "What's wrong with my cluster right now?",
   "Which pods restarted recently and why?",
@@ -123,10 +164,9 @@ export default function AssistantPage() {
                   step.kind === "tool" ? (
                     <div
                       key={j}
-                      className="my-1.5 truncate rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                      title={step.content}
+                      className="my-1.5 flex items-center gap-1.5 truncate px-1 py-0.5 text-xs italic text-slate-400 dark:text-slate-500"
                     >
-                      🔧 {step.content}
+                      <span className="not-italic">🔍</span> {describeTool(step.content)}
                     </div>
                   ) : step.kind === "error" ? (
                     <div key={j} className="my-1.5 text-sm text-red-500">
