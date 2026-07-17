@@ -40,5 +40,16 @@ func (s *Server) agentProxy() http.Handler {
 			})
 		},
 	}
-	return proxy
+
+	// Block server-internal agent endpoints from the public proxy. /resolve
+	// is called by the server directly (bypassing this proxy) after it
+	// applies a proposal; exposing it here would let a UI caller spoof the
+	// audit trail by marking proposals applied without applying them.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/resolve") {
+			writeJSON(w, http.StatusNotFound, errorResponse{Error: "not_found", Message: "not found"})
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	})
 }

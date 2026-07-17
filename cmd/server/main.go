@@ -43,7 +43,7 @@ func run() error {
 	}
 
 	staticDir := staticDirIfPresent(log)
-	srv := server.New(client, cfg.AgentURL, staticDir, version, log)
+	srv := server.New(client, cfg.AgentURL, staticDir, version, cfg.Mode, log)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

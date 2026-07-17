@@ -1,9 +1,13 @@
 # RBAC is split on purpose:
-#   - "server" can read everything the UI shows, update/patch for the YAML
-#     editor, and use pods/log + pods/exec.
-#   - "agent" is strictly read-only (get/list/watch + pods/log). It cannot
-#     mutate anything. Verify with:
+#   - "agent" is ALWAYS strictly read-only (get/list/watch + pods/log). It
+#     cannot mutate anything. Verify with:
 #       kubectl auth can-i delete pods --as=system:serviceaccount:kentinel:agent
+#   - "server" powers depend on the operating mode. This file ships the
+#     READ-ONLY server role (get/list/watch + pods/log). To run in ASSISTED
+#     mode (approval-gated remediation + manifest editor + terminal), add
+#     update/patch to each resource rule below and uncomment the pods/exec
+#     rule, AND set KENTINEL_MODE=assisted on both deployments
+#     (03-agent.yaml, 04-server.yaml). See docs/security.md.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -21,6 +25,7 @@ kind: ClusterRole
 metadata:
   name: kentinel-server
 rules:
+  # ASSISTED mode: append "update, patch" to each verbs list below.
   - apiGroups: [""]
     resources:
       - pods
@@ -31,22 +36,23 @@ rules:
       - namespaces
       - nodes
       - events
-    verbs: [get, list, watch, update, patch]
+    verbs: [get, list, watch]
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets, replicasets]
-    verbs: [get, list, watch, update, patch]
+    verbs: [get, list, watch]
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
-    verbs: [get, list, watch, update, patch]
+    verbs: [get, list, watch]
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
-    verbs: [get, list, watch, update, patch]
+    verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get, list]
-  - apiGroups: [""]
-    resources: [pods/exec]
-    verbs: [create]
+  # ASSISTED mode: uncomment for the in-browser terminal + exec remediation.
+  # - apiGroups: [""]
+  #   resources: [pods/exec]
+  #   verbs: [create]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

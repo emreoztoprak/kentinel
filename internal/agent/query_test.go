@@ -53,7 +53,7 @@ func newQueryEngine(t *testing.T, provider llm.Provider) *QueryEngine {
 		changed:  make(chan struct{}, 1),
 		log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	return NewQueryEngine(client, runtime, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewQueryEngine(client, runtime, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func runQuery(engine *QueryEngine, prompt string) []QueryEvent {

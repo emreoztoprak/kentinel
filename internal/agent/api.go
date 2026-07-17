@@ -42,6 +42,14 @@ func (a *API) Router() http.Handler {
 	r.Get("/models", a.handleModels)
 	r.Post("/notifications/test", a.handleTestNotification)
 	r.Get("/metrics/health", a.handleMetricsHealth)
+
+	// Remediation proposals. The agent only reads/rejects/records them — it
+	// never applies (no write RBAC). The server calls /resolve after it
+	// applies an approved proposal.
+	r.Get("/proposals", a.handleListProposals)
+	r.Get("/proposals/{id}", a.handleGetProposal)
+	r.Post("/proposals/{id}/reject", a.handleRejectProposal)
+	r.Post("/proposals/{id}/resolve", a.handleResolveProposal)
 	return r
 }
 
@@ -295,6 +303,55 @@ func (a *API) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 	})
+}
+
+// handleListProposals returns proposals, newest first. ?pending=true limits
+// to the actionable set.
+func (a *API) handleListProposals(w http.ResponseWriter, r *http.Request) {
+	proposals, err := a.store.ListProposals(r.URL.Query().Get("pending") == "true")
+	if err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "list_failed", "message": err.Error()})
+		return
+	}
+	if proposals == nil {
+		proposals = []Proposal{}
+	}
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{"proposals": proposals})
+}
+
+func (a *API) handleGetProposal(w http.ResponseWriter, r *http.Request) {
+	p, ok, err := a.store.GetProposal(chi.URLParam(r, "id"))
+	if err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "get_failed", "message": err.Error()})
+		return
+	}
+	if !ok {
+		a.writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "message": "proposal not found"})
+		return
+	}
+	a.writeJSON(w, http.StatusOK, p)
+}
+
+func (a *API) handleRejectProposal(w http.ResponseWriter, r *http.Request) {
+	if err := a.store.RejectProposal(chi.URLParam(r, "id")); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reject_failed", "message": err.Error()})
+		return
+	}
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
+}
+
+// handleResolveProposal records the outcome of an approved+applied proposal.
+// Called by the SERVER after it applies the change — not exposed to the UI.
+func (a *API) handleResolveProposal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := a.store.ResolveProposal(chi.URLParam(r, "id"), body.Error); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "resolve_failed", "message": err.Error()})
+		return
+	}
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
 }
 
 func (a *API) writeJSON(w http.ResponseWriter, status int, v interface{}) {

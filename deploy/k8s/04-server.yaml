@@ -29,6 +29,10 @@ spec:
           env:
             - name: AGENT_URL
               value: http://agent.kentinel.svc:8090
+            # Operating mode: "readonly" (default) or "assisted". Must match
+            # the agent (03-agent.yaml) and the RBAC in 01-rbac.yaml.
+            - name: KENTINEL_MODE
+              value: "readonly"
             - name: LOG_FORMAT
               value: json
           readinessProbe:

@@ -16,7 +16,11 @@ export default function ResourceDetailPage() {
   const isPod = kind === "pods";
   const navigate = useNavigate();
 
-  const tabs = ["Overview", "YAML", "Events", ...(isPod ? ["Logs", "Terminal"] : [])];
+  const { data: settings } = useQuery({ queryKey: ["server-settings"], queryFn: api.serverSettings });
+  const assisted = settings?.mode === "assisted";
+
+  // The Terminal (pod exec) is a write capability — hidden in read-only mode.
+  const tabs = ["Overview", "YAML", "Events", ...(isPod ? ["Logs", ...(assisted ? ["Terminal"] : [])] : [])];
   const [tab, setTab] = useState("Overview");
 
   const { data, error, isLoading } = useQuery({
@@ -119,6 +123,7 @@ export default function ResourceDetailPage() {
             name={name}
             initialYaml={data.yaml}
             dark={dark}
+            readOnly={!assisted}
           />
         </Suspense>
       )}

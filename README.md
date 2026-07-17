@@ -21,6 +21,10 @@ Ollama provider, no cluster data ever leaves your infrastructure.
   with concrete findings and recommendations
 - **AI assistant** — chat with an agent that inspects your resources, logs and
   events using **read-only** tools; it can diagnose but never modify anything
+- **Two operating modes** — `readonly` (default; observe + Q&A, cannot change
+  anything, enforced by RBAC) or `assisted` (the agent proposes fixes as a
+  reviewable diff; you approve and the server applies — never autonomous). See
+  [docs/security.md](docs/security.md)
 - **Review history & trends** — every review is persisted (SQLite on a PVC),
   with a 24h status timeline on the dashboard and a filterable history page —
   "when did this start?" has an answer even after pod restarts

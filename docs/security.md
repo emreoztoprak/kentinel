@@ -2,13 +2,41 @@
 
 Read this before running the console anywhere that isn't your own machine.
 
-## The headline: v1 has no authentication
+## Operating mode: readonly (default) vs assisted
 
-Anyone who can reach the server port can, within the server's RBAC scope:
+Kentinel runs in one of two modes, chosen at deploy time (`mode` Helm value /
+`KENTINEL_MODE` env) and enforced primarily by the **server ServiceAccount's
+RBAC** — not just app code:
+
+| | `readonly` (default) | `assisted` |
+| --- | --- | --- |
+| Server RBAC | get/list/watch + `pods/log` | adds `update`/`patch` + `pods/exec` |
+| Manifest editor / terminal | disabled (hidden; RBAC-blocked) | enabled |
+| Agent remediation proposals | none | agent may propose changes |
+| Can Kentinel change a resource? | **No — impossible at the cluster level** | Only via a human-approved proposal |
+
+In readonly mode the server's ServiceAccount literally lacks write and exec
+verbs, so even an app bug or a compromised LLM cannot mutate anything —
+Kubernetes rejects the call. Switching modes requires a redeploy (an admin
+decision), so a UI user can't grant themselves write access.
+
+**Assisted mode never applies anything autonomously.** The LLM-facing agent
+still has zero write RBAC; it can only *propose* a change (a target + a full
+proposed manifest + a rationale), which a human reviews as a diff and
+approves. Only then does the **server** (not the agent) apply it, via the same
+guarded path the manifest editor uses, and record the outcome in an audit
+trail. So even a prompt-injected agent (pod logs are attacker-influenced
+input!) can at most put a proposal in the queue for a human to reject — it
+cannot touch the cluster on its own. Approval means *actually reviewing the
+diff*: a proposal is only as safe as the person clicking approve.
+
+## No authentication in v1
+
+Anyone who can reach the server port can, within the server's RBAC scope for
+the current mode:
 
 - read every resource the UI shows (including Secret manifests via the YAML view),
-- edit manifests,
-- **exec into pods** — which is effectively code execution in your workloads.
+- in **assisted** mode: edit manifests, exec into pods, and approve agent proposals.
 
 Deploy accordingly:
 
@@ -25,14 +53,17 @@ the auth layer.
 
 | | server | agent |
 | --- | --- | --- |
-| Cluster access | get/list/watch + update/patch, `pods/log`, `pods/exec` | get/list/watch + `pods/log` **only** |
+| Cluster access | get/list/watch + `pods/log` (+ `update`/`patch` + `pods/exec` in assisted mode) | get/list/watch + `pods/log` **only, always** |
 | Secrets | readable (needed for the resource browser) | **no access** |
 | Talks to LLM | never | yes |
+| Applies changes | yes, on human approval (assisted mode) | **never** — proposes only |
 
-The consequence: **nothing that touches the LLM can mutate the cluster or
-read secrets.** Even if a model hallucinates, is prompt-injected via pod logs
-(logs are attacker-influenced input!), or a provider is compromised, the blast
-radius is read-only cluster metadata and logs.
+The consequence holds in both modes: **nothing that touches the LLM can
+mutate the cluster or read secrets.** The agent's RBAC never gains write or
+exec verbs regardless of mode. Even if a model hallucinates, is
+prompt-injected via pod logs, or a provider is compromised, the worst it can
+do is generate a proposal a human must review and approve — it cannot apply
+anything itself.
 
 ## What leaves your machine/cluster
 

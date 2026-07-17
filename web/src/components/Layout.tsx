@@ -139,13 +139,40 @@ export default function Layout({ children }: { children: ReactNode }) {
           ) : (
             <div />
           )}
-          <button className="btn-ghost" onClick={toggle} title="Toggle theme">
-            {dark ? "🌙 Dark" : "☀️ Light"}
-          </button>
+          <div className="flex items-center gap-3">
+            <ModeBadge />
+            <button className="btn-ghost" onClick={toggle} title="Toggle theme">
+              {dark ? "🌙 Dark" : "☀️ Light"}
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
+  );
+}
+
+// ModeBadge shows the deploy-time operating mode so it's always clear whether
+// Kentinel can change anything.
+function ModeBadge() {
+  const { data } = useQuery({ queryKey: ["server-settings"], queryFn: api.serverSettings });
+  if (!data) return null;
+  const assisted = data.mode === "assisted";
+  return (
+    <span
+      title={
+        assisted
+          ? "Assisted mode: the agent can propose changes for you to approve."
+          : "Read-only mode: Kentinel observes and advises but cannot change anything."
+      }
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+        assisted
+          ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+      }`}
+    >
+      {assisted ? "Assisted" : "Read-only"}
+    </span>
   );
 }

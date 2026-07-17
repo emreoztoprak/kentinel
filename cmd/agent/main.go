@@ -52,7 +52,7 @@ func run() error {
 	}
 	log.Info("llm provider configured", "provider", runtime.Provider().Name(), "model", runtime.Provider().Model())
 
-	queryEngine := agent.NewQueryEngine(client, runtime, log)
+	queryEngine := agent.NewQueryEngine(client, runtime, store, log)
 	notifier := agent.NewDispatcher(runtime, log)
 	api := agent.NewAPI(store, queryEngine, runtime, notifier, log)
 

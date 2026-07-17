@@ -8,6 +8,14 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+# --- Operating mode (deploy-time; enforced by the server's RBAC) ---
+# "readonly" (default): Kentinel observes and answers questions but cannot
+#   change any resource. The server ServiceAccount has no write/exec RBAC.
+# "assisted": the agent may generate remediation proposals; you approve each
+#   in the UI and the server applies it. The manifest editor and pod terminal
+#   are also enabled. Switching modes requires a redeploy (see docs/security.md).
+mode: readonly
+
 # --- LLM provider ---
 llm:
   # "ollama" (default, local) or "anthropic" | "openai" | "deepseek" | "gemini"

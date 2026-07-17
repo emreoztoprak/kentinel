@@ -17,6 +17,7 @@ import (
 	kfake "k8s.io/client-go/kubernetes/fake"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
 
+	"github.com/emreoztoprak/kentinel/internal/config"
 	"github.com/emreoztoprak/kentinel/internal/k8s"
 )
 
@@ -68,7 +69,9 @@ func newTestAPI(t *testing.T) *httptest.Server {
 	dyn := dynfake.NewSimpleDynamicClient(clientscheme.Scheme, pod, configMap, node, deployment)
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := New(&k8s.Client{Clientset: clientset, Dynamic: dyn}, "http://127.0.0.1:1", "", "test", log)
+	// assisted so the existing write-route tests (UpdateResource) exercise
+	// the real path; readonly-specific behaviour is tested separately.
+	srv := New(&k8s.Client{Clientset: clientset, Dynamic: dyn}, "http://127.0.0.1:1", "", "test", config.ModeAssisted, log)
 
 	ts := httptest.NewServer(srv.Router())
 	t.Cleanup(ts.Close)

@@ -10,13 +10,28 @@ import (
 	"github.com/emreoztoprak/kentinel/internal/llm"
 )
 
-const querySystemPrompt = `You are a Kubernetes assistant embedded in a cluster dashboard.
-You answer questions about THIS cluster using the provided read-only tools. Guidelines:
+const querySystemPromptBase = `You are a Kubernetes assistant embedded in a cluster dashboard.
+You answer questions about THIS cluster using the provided tools. Guidelines:
 - Ground every claim in tool output. If you did not look, do not guess.
 - Prefer targeted tool calls (namespace + name) over listing everything.
 - For log analysis, use sinceSeconds to honor time windows the user asks for.
-- You cannot modify the cluster. If a fix is needed, explain the exact kubectl command or UI action the user should take.
 - Answer in concise Markdown. Use short bullet lists; include resource names verbatim.`
+
+// readonly appendix: no write path at all.
+const querySystemPromptReadOnly = `
+- You cannot modify the cluster. If a fix is needed, explain the exact kubectl command or UI action the user should take.`
+
+// assisted appendix: the propose_change tool is available, gated by approval.
+const querySystemPromptAssisted = `
+- When the user asks you to fix, change, or update something, use the propose_change tool. First read the current manifest with get_resource, then propose the FULL modified manifest. This does NOT apply the change — it queues it for the user to approve.
+- Never claim you have applied or changed anything. You can only propose; a human approves and the system applies. Make changes minimal and targeted.`
+
+func querySystemPrompt(assisted bool) string {
+	if assisted {
+		return querySystemPromptBase + querySystemPromptAssisted
+	}
+	return querySystemPromptBase + querySystemPromptReadOnly
+}
 
 const maxQueryIterations = 15
 
@@ -34,12 +49,13 @@ type QueryEvent struct {
 type QueryEngine struct {
 	k8s     *k8s.Client
 	runtime *Runtime
+	store   *Store // for propose_change (assisted mode); may be nil
 	log     *slog.Logger
 }
 
 // NewQueryEngine wires the query engine.
-func NewQueryEngine(client *k8s.Client, runtime *Runtime, log *slog.Logger) *QueryEngine {
-	return &QueryEngine{k8s: client, runtime: runtime, log: log}
+func NewQueryEngine(client *k8s.Client, runtime *Runtime, store *Store, log *slog.Logger) *QueryEngine {
+	return &QueryEngine{k8s: client, runtime: runtime, store: store, log: log}
 }
 
 // Run executes one query, emitting progress events until "done" or "error".
@@ -53,12 +69,13 @@ func (q *QueryEngine) Run(ctx context.Context, prompt string, emit func(QueryEve
 
 	provider := q.runtime.Provider()
 	prom := q.runtime.Prometheus()
+	assisted := q.runtime.Assisted()
 	messages := []llm.Message{{Role: "user", Text: prompt}}
-	tools := queryTools(prom != nil)
+	tools := queryTools(prom != nil, assisted)
 
 	for iteration := 0; iteration < maxQueryIterations; iteration++ {
 		resp, err := provider.Chat(queryCtx, llm.ChatRequest{
-			System:    querySystemPrompt,
+			System:    querySystemPrompt(assisted),
 			Messages:  messages,
 			Tools:     tools,
 			MaxTokens: 4096,
@@ -84,7 +101,7 @@ func (q *QueryEngine) Run(ctx context.Context, prompt string, emit func(QueryEve
 		results := make([]llm.ToolResult, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
 			emit(QueryEvent{Type: "tool", Content: describeToolCall(call)})
-			output, err := runTool(queryCtx, q.k8s, prom, call)
+			output, err := runTool(queryCtx, q.k8s, prom, q.store, call)
 			result := llm.ToolResult{ID: call.ID, Name: call.Name, Content: output}
 			if err != nil {
 				// Tool errors go back to the model so it can adapt

@@ -11,10 +11,12 @@ import (
 	"github.com/emreoztoprak/kentinel/internal/llm"
 )
 
-// The agent's tool set is strictly read-only: list, get, logs, events,
-// overview, and (when Prometheus is configured) metrics. There is
-// deliberately no create/update/delete — the agent analyzes, humans act.
-func queryTools(metricsEnabled bool) []llm.Tool {
+// The agent's cluster tools are strictly read-only: list, get, logs, events,
+// overview, and (when Prometheus is configured) metrics. In assisted mode one
+// more tool — propose_change — is added, but it too performs NO cluster write:
+// it only records a proposal in the agent's own database for a human to
+// approve. The privileged apply happens in the server, never here.
+func queryTools(metricsEnabled, assisted bool) []llm.Tool {
 	kinds := make([]string, 0)
 	for _, k := range k8s.SupportedKinds() {
 		kinds = append(kinds, k.Kind)
@@ -69,6 +71,23 @@ func queryTools(metricsEnabled bool) []llm.Tool {
 		},
 	}
 
+	if assisted {
+		tools = append(tools, llm.Tool{
+			Name: "propose_change",
+			Description: "Propose a fix to ONE resource for the human to review and approve. " +
+				"This does NOT apply anything — it queues a proposed change that the user must approve; the server applies it only after approval. " +
+				"Use this when the user asks you to fix/change/update something. First call get_resource to read the current manifest, then supply the full modified manifest as proposedYaml. Only propose changes you are confident are correct and minimal.",
+			Properties: map[string]interface{}{
+				"kind":         map[string]interface{}{"type": "string", "description": "resource kind (plural), e.g. deployments"},
+				"namespace":    map[string]interface{}{"type": "string", "description": "namespace (empty for cluster-scoped kinds)"},
+				"name":         map[string]interface{}{"type": "string", "description": "resource name"},
+				"proposedYaml": map[string]interface{}{"type": "string", "description": "the FULL modified manifest as YAML (not a patch). Its kind/name/namespace must match the target."},
+				"rationale":    map[string]interface{}{"type": "string", "description": "a one or two sentence explanation of what this change does and why"},
+			},
+			Required: []string{"kind", "name", "proposedYaml", "rationale"},
+		})
+	}
+
 	if metricsEnabled {
 		tools = append(tools,
 			llm.Tool{
@@ -96,9 +115,10 @@ const (
 	maxToolResultLen = 30000 // characters per tool result fed back to the model
 )
 
-// runTool executes one read-only tool call against the cluster (and, for the
-// metrics tools, against Prometheus — prom may be nil when disabled).
-func runTool(ctx context.Context, client *k8s.Client, prom *promClient, call llm.ToolCall) (string, error) {
+// runTool executes one tool call. All cluster tools are read-only; the
+// metrics tools hit Prometheus (prom may be nil). propose_change writes ONLY
+// to the agent's own store (never the cluster) and requires a non-nil store.
+func runTool(ctx context.Context, client *k8s.Client, prom *promClient, store *Store, call llm.ToolCall) (string, error) {
 	var args struct {
 		Kind         string `json:"kind"`
 		Namespace    string `json:"namespace"`
@@ -110,6 +130,8 @@ func runTool(ctx context.Context, client *k8s.Client, prom *promClient, call llm
 		Previous     bool   `json:"previous"`
 		Type         string `json:"type"`
 		Query        string `json:"query"`
+		ProposedYAML string `json:"proposedYaml"`
+		Rationale    string `json:"rationale"`
 	}
 	if len(call.Input) > 0 {
 		if err := json.Unmarshal(call.Input, &args); err != nil {
@@ -199,9 +221,48 @@ func runTool(ctx context.Context, client *k8s.Client, prom *promClient, call llm
 		}
 		return capString(renderSamples(samples, 50)), nil
 
+	case "propose_change":
+		return proposeChange(ctx, client, store, args.Kind, args.Namespace, args.Name, args.ProposedYAML, args.Rationale)
+
 	default:
 		return "", fmt.Errorf("unknown tool %q", call.Name)
 	}
+}
+
+// proposeChange records a remediation proposal for human approval. It makes
+// NO change to the cluster — it snapshots the current manifest (read-only),
+// validates the proposed one, and stores a pending proposal. Returns a short
+// confirmation for the model to relay to the user.
+func proposeChange(ctx context.Context, client *k8s.Client, store *Store, kind, namespace, name, proposedYAML, rationale string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("proposals are unavailable (no persistent store)")
+	}
+	if proposedYAML == "" {
+		return "", fmt.Errorf("proposedYaml is required")
+	}
+	// Validate the proposed manifest parses and its identity matches the
+	// target. The server re-validates this at apply time (authoritative
+	// guard in k8s.UpdateResource); this is early feedback for the model.
+	if err := k8s.ValidateManifestTarget(kind, namespace, name, proposedYAML); err != nil {
+		return "", err
+	}
+	// Snapshot the current manifest for the approval diff (read-only).
+	current, err := client.GetResource(ctx, kind, namespace, name)
+	if err != nil {
+		return "", fmt.Errorf("reading current %s %s: %w", kind, name, err)
+	}
+
+	p, err := store.SaveProposal(Proposal{
+		Kind: kind, Namespace: namespace, Name: name,
+		Rationale:    rationale,
+		CurrentYAML:  current.YAML,
+		ProposedYAML: proposedYAML,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Proposed a change to %s %s/%s (proposal %s). It is now pending the user's approval — it has NOT been applied. Tell the user to review and approve it in the Pending Changes panel.",
+		kind, namespace, name, p.ID), nil
 }
 
 func marshalJSON(v interface{}) (string, error) {

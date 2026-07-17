@@ -98,15 +98,21 @@ func (c *Client) GetResource(ctx context.Context, kind, namespace, name string) 
 	}, nil
 }
 
-// UpdateResource applies an edited YAML manifest. The manifest's kind, name
-// and namespace must match the request path — this prevents an edit form for
-// one object from silently modifying another.
-func (c *Client) UpdateResource(ctx context.Context, kind, namespace, name, manifest string) (*ResourceDetail, error) {
+// ValidateManifestTarget parses a YAML manifest and confirms its kind, name,
+// and namespace match the request path — preventing an edit/proposal for one
+// object from silently modifying another. Shared by UpdateResource (the
+// authoritative apply guard) and the agent's propose_change tool (early
+// feedback). Returns the parsed object so callers don't re-parse.
+func ValidateManifestTarget(kind, namespace, name, manifest string) error {
+	_, err := parseAndValidateManifest(kind, namespace, name, manifest)
+	return err
+}
+
+func parseAndValidateManifest(kind, namespace, name, manifest string) (*unstructured.Unstructured, error) {
 	info, err := LookupKind(kind)
 	if err != nil {
 		return nil, err
 	}
-
 	var objMap map[string]interface{}
 	if err := yaml.Unmarshal([]byte(manifest), &objMap); err != nil {
 		return nil, fmt.Errorf("invalid YAML: %w", err)
@@ -121,6 +127,22 @@ func (c *Client) UpdateResource(ctx context.Context, kind, namespace, name, mani
 	}
 	if info.Namespaced && obj.GetNamespace() != namespace {
 		return nil, fmt.Errorf("manifest namespace %q does not match resource namespace %q", obj.GetNamespace(), namespace)
+	}
+	return obj, nil
+}
+
+// UpdateResource applies an edited YAML manifest. The manifest's kind, name
+// and namespace must match the request path — this prevents an edit form for
+// one object from silently modifying another.
+func (c *Client) UpdateResource(ctx context.Context, kind, namespace, name, manifest string) (*ResourceDetail, error) {
+	info, err := LookupKind(kind)
+	if err != nil {
+		return nil, err
+	}
+
+	obj, err := parseAndValidateManifest(kind, namespace, name, manifest)
+	if err != nil {
+		return nil, err
 	}
 
 	ri := c.Dynamic.Resource(info.GVR).Namespace(namespaceFor(info, namespace))

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/emreoztoprak/kentinel/internal/config"
 	"github.com/emreoztoprak/kentinel/internal/k8s"
 )
 
@@ -26,11 +27,14 @@ type Server struct {
 	// released build) — surfaced via GET /api/v1/settings for the
 	// dashboard's update-check card.
 	version string
+	// mode gates writes: readonly rejects mutation (defense in depth on top
+	// of the ServiceAccount RBAC), assisted allows approval-gated apply.
+	mode config.Mode
 }
 
 // New creates the server. staticDir may be empty.
-func New(client *k8s.Client, agentURL, staticDir, version string, log *slog.Logger) *Server {
-	return &Server{k8s: client, agentURL: agentURL, log: log, staticDir: staticDir, version: version}
+func New(client *k8s.Client, agentURL, staticDir, version string, mode config.Mode, log *slog.Logger) *Server {
+	return &Server{k8s: client, agentURL: agentURL, log: log, staticDir: staticDir, version: version, mode: mode}
 }
 
 // Router builds the chi router with all routes and middleware.
@@ -51,14 +55,24 @@ func (s *Server) Router() http.Handler {
 		r.Route("/resources/{kind}", func(r chi.Router) {
 			r.Get("/", s.handleListResources)
 			r.Get("/{namespace}/{name}", s.handleGetResource)
-			r.Put("/{namespace}/{name}", s.handleUpdateResource)
+			// Mutating routes are gated on assisted mode. This is defense in
+			// depth: in readonly mode the server ServiceAccount also has no
+			// write RBAC, so even without this guard the k8s API would reject
+			// the write — the guard just returns a clean 403 instead.
+			r.With(s.requireAssisted).Put("/{namespace}/{name}", s.handleUpdateResource)
 		})
 
 		r.Get("/pods/{namespace}/{name}/containers", s.handlePodContainers)
 		r.Get("/pods/{namespace}/{name}/logs", s.handlePodLogs)
-		r.Get("/pods/{namespace}/{name}/exec", s.handlePodExec) // WebSocket
+		r.With(s.requireAssisted).Get("/pods/{namespace}/{name}/exec", s.handlePodExec) // WebSocket
 
 		r.Get("/settings", s.handleServerSettings)
+
+		// Approving a proposal APPLIES a cluster change, so it lives on the
+		// server (which has the write RBAC), not the agent, and is gated on
+		// assisted mode. Listing/rejecting are read-or-harmless and proxy to
+		// the agent below.
+		r.With(s.requireAssisted).Post("/proposals/{id}/apply", s.handleApplyProposal)
 
 		// Everything under /agent, including settings updates, is proxied
 		// straight to the agent service — it owns validation and persistence.

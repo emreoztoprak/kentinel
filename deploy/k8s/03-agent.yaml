@@ -57,6 +57,10 @@ spec:
           # Settings UI is the only way to change anything after that. See
           # docs/security.md.
           env:
+            # Operating mode: "readonly" (default) or "assisted". Must match
+            # the server (04-server.yaml) and the RBAC in 01-rbac.yaml.
+            - name: KENTINEL_MODE
+              value: "readonly"
             # "ollama" (default, local) or a cloud provider: "anthropic",
             # "openai", "deepseek", "gemini" (each needs its API key in
             # agent-secrets).

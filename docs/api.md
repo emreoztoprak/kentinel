@@ -73,6 +73,9 @@ prefix stripped.
 | `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`, `version`) |
 | `GET /api/v1/agent/models?provider=&host=` | Selectable models: installed Ollama models or the curated Claude list |
 | `POST /api/v1/agent/notifications/test` | Send a test notification to every configured webhook (Discord/Slack/Teams) |
+| `GET /api/v1/agent/proposals?pending=` | List remediation proposals (assisted mode). `pending=true` = actionable set only |
+| `POST /api/v1/agent/proposals/{id}/reject` | Reject a pending proposal (no cluster action) |
+| `POST /api/v1/proposals/{id}/apply` | **Server** endpoint (not proxied): apply an approved proposal. 403 in readonly mode; the server fetches the proposal from the agent, applies it, and records the outcome |
 | `GET /api/v1/agent/metrics/health` | Check Prometheus connectivity (400 = not configured, 502 = unreachable) |
 
 ### PUT /api/v1/agent/config

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import AiPanel from "../components/AiPanel";
+import ProposalsPanel from "../components/ProposalsPanel";
 import UpdateStatus from "../components/UpdateStatus";
 import { ErrorBox, PageTitle, Spinner, StatusBadge } from "../components/ui";
 import { timeAgo } from "../util";
@@ -12,12 +13,16 @@ export default function DashboardPage() {
     queryFn: api.overview,
     refetchInterval: 10_000,
   });
+  const { data: settings } = useQuery({ queryKey: ["server-settings"], queryFn: api.serverSettings });
+  const assisted = settings?.mode === "assisted";
 
   return (
     <div>
       <PageTitle>Dashboard</PageTitle>
 
       <UpdateStatus />
+
+      {assisted && <ProposalsPanel />}
 
       <div className="mb-6">
         <AiPanel />

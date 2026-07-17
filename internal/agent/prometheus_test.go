@@ -81,7 +81,7 @@ func TestQueryMetricsToolWiring(t *testing.T) {
 	defer server.Close()
 
 	input, _ := json.Marshal(map[string]string{"query": "up"})
-	out, err := runTool(context.Background(), nil, newPromClient(server.URL), toolCallNamed("query_metrics", input))
+	out, err := runTool(context.Background(), nil, newPromClient(server.URL), nil, toolCallNamed("query_metrics", input))
 	if err != nil {
 		t.Fatalf("runTool failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestQueryMetricsToolWiring(t *testing.T) {
 	}
 
 	// Without a client the metrics tools return a clear configuration error.
-	if _, err := runTool(context.Background(), nil, nil, toolCallNamed("query_metrics", input)); err == nil ||
+	if _, err := runTool(context.Background(), nil, nil, nil, toolCallNamed("query_metrics", input)); err == nil ||
 		!strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("err = %v, want not-configured error", err)
 	}

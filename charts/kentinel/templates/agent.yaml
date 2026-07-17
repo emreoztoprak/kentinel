@@ -57,6 +57,10 @@ spec:
           # Settings UI is the only way to change anything after that. See
           # docs/security.md.
           env:
+            # Deploy-time constant (not a bootstrap-only setting): always
+            # read from env, gates whether the agent may propose changes.
+            - name: KENTINEL_MODE
+              value: {{ .Values.mode | quote }}
             - name: LLM_PROVIDER
               value: {{ .Values.llm.provider | quote }}
             - name: LLM_MODEL

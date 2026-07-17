@@ -10,6 +10,33 @@ import (
 	"time"
 )
 
+// Mode is the deployment's operating mode. It is a deploy-time decision,
+// enforced primarily by the server ServiceAccount's RBAC (in readonly mode
+// the SA has no write/exec verbs at all) and secondarily by app-level guards.
+type Mode string
+
+const (
+	// ModeReadOnly: observe + Q&A only. Kentinel cannot change any resource.
+	// The default — least privilege, fail closed.
+	ModeReadOnly Mode = "readonly"
+	// ModeAssisted: the agent may generate approval-gated remediation
+	// proposals; a human approves each, and the server (not the agent)
+	// applies it. Manifest editing and pod exec are also enabled.
+	ModeAssisted Mode = "assisted"
+)
+
+// parseMode validates KENTINEL_MODE, defaulting to the safe readonly mode.
+func parseMode(v string) (Mode, error) {
+	switch Mode(v) {
+	case "", ModeReadOnly:
+		return ModeReadOnly, nil
+	case ModeAssisted:
+		return ModeAssisted, nil
+	default:
+		return "", fmt.Errorf("KENTINEL_MODE %q is invalid (expected \"readonly\" or \"assisted\")", v)
+	}
+}
+
 // Server holds configuration for the UI backend.
 type Server struct {
 	Port       int
@@ -17,6 +44,7 @@ type Server struct {
 	Kubeconfig string // empty = auto (KUBECONFIG env, ~/.kube/config, in-cluster)
 	LogLevel   string
 	LogFormat  string
+	Mode       Mode
 }
 
 // Agent holds configuration for the AI agent service.
@@ -50,6 +78,10 @@ type Agent struct {
 	// Prometheus base URL for the agent's metrics tools. Empty = metrics
 	// tools disabled.
 	PrometheusURL string
+
+	// Mode gates approval-gated remediation proposals (assisted) vs pure
+	// observation (readonly).
+	Mode Mode
 }
 
 // Defaults for the LLM providers. Overridable via LLM_MODEL.
@@ -82,12 +114,17 @@ func LoadServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	mode, err := parseMode(envStr("KENTINEL_MODE", ""))
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		Port:       port,
 		AgentURL:   envStr("AGENT_URL", "http://localhost:8090"),
 		Kubeconfig: envStr("KUBECONFIG_PATH", ""),
 		LogLevel:   envStr("LOG_LEVEL", "info"),
 		LogFormat:  envStr("LOG_FORMAT", "text"),
+		Mode:       mode,
 	}, nil
 }
 
@@ -124,6 +161,11 @@ func LoadAgent() (*Agent, error) {
 		}
 	}
 
+	mode, err := parseMode(envStr("KENTINEL_MODE", ""))
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Agent{
 		Port:           port,
 		Kubeconfig:     envStr("KUBECONFIG_PATH", ""),
@@ -146,6 +188,7 @@ func LoadAgent() (*Agent, error) {
 		InsightRetentionDays: retentionDays,
 
 		PrometheusURL: envStr("PROMETHEUS_URL", ""),
+		Mode:          mode,
 	}
 
 	if cfg.NotifyMinSeverity != "warning" && cfg.NotifyMinSeverity != "critical" {

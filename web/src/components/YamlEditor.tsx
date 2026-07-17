@@ -14,12 +14,14 @@ export default function YamlEditor({
   name,
   initialYaml,
   dark,
+  readOnly = false,
 }: {
   kind: string;
   namespace: string;
   name: string;
   initialYaml: string;
   dark: boolean;
+  readOnly?: boolean;
 }) {
   const [value, setValue] = useState(initialYaml);
   const [saved, setSaved] = useState(false);
@@ -42,26 +44,33 @@ export default function YamlEditor({
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
-        <button
-          className="btn-primary"
-          disabled={mutation.isPending || value === initialYaml}
-          onClick={() => mutation.mutate(value)}
-        >
-          {mutation.isPending ? "Applying..." : "Apply changes"}
-        </button>
-        <button
-          className="btn-ghost"
-          disabled={!dirty}
-          onClick={() => {
-            setValue(initialYaml);
-            mutation.reset();
-          }}
-        >
-          Reset
-        </button>
-        {saved && <span className="text-sm text-emerald-600">✓ Applied</span>}
-      </div>
+      {readOnly ? (
+        <div className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+          Read-only mode — manifests can be viewed but not edited. Redeploy with
+          mode=assisted to enable editing.
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center gap-2">
+          <button
+            className="btn-primary"
+            disabled={mutation.isPending || value === initialYaml}
+            onClick={() => mutation.mutate(value)}
+          >
+            {mutation.isPending ? "Applying..." : "Apply changes"}
+          </button>
+          <button
+            className="btn-ghost"
+            disabled={!dirty}
+            onClick={() => {
+              setValue(initialYaml);
+              mutation.reset();
+            }}
+          >
+            Reset
+          </button>
+          {saved && <span className="text-sm text-emerald-600">✓ Applied</span>}
+        </div>
+      )}
 
       {mutation.error != null && (
         <div className="mb-3">
@@ -81,6 +90,7 @@ export default function YamlEditor({
             fontSize: 13,
             scrollBeyondLastLine: false,
             wordWrap: "on",
+            readOnly,
           }}
         />
       </div>

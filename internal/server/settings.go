@@ -19,6 +19,7 @@ func (s *Server) handleServerSettings(w http.ResponseWriter, r *http.Request) {
 		"inCluster":        inCluster,
 		"namespace":        namespace,
 		"version":          s.version,
+		"mode":             string(s.mode),
 		"supportedByProxy": true,
 	})
 }

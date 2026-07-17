@@ -1,6 +1,10 @@
-# RBAC is split on purpose: the server can read + update/patch + exec (the
-# human's powers); the agent is strictly read-only, no secrets — the AI can
-# diagnose anything but modify nothing.
+# RBAC is split on purpose: the agent is ALWAYS strictly read-only, no
+# secrets — the AI can diagnose anything but modify nothing. The server's
+# powers depend on the deploy-time mode:
+#   readonly (default): get/list/watch + pods/log only — Kentinel cannot
+#     change any resource, enforced at the cluster level (not just app code).
+#   assisted: adds update/patch + pods/exec, so approved remediation
+#     proposals (and the manifest editor / terminal) can act.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -13,6 +17,10 @@ metadata:
   name: {{ .Release.Name }}-agent
   labels: {{- include "kentinel.labels" . | nindent 4 }}
 ---
+{{- $verbs := list "get" "list" "watch" }}
+{{- if eq .Values.mode "assisted" }}
+{{- $verbs = concat $verbs (list "update" "patch") }}
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -21,22 +29,24 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods, services, configmaps, secrets, persistentvolumeclaims, namespaces, nodes, events]
-    verbs: [get, list, watch, update, patch]
+    verbs: {{ $verbs | toJson }}
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets, replicasets]
-    verbs: [get, list, watch, update, patch]
+    verbs: {{ $verbs | toJson }}
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
-    verbs: [get, list, watch, update, patch]
+    verbs: {{ $verbs | toJson }}
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
-    verbs: [get, list, watch, update, patch]
+    verbs: {{ $verbs | toJson }}
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get, list]
+  {{- if eq .Values.mode "assisted" }}
   - apiGroups: [""]
     resources: [pods/exec]
     verbs: [create]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

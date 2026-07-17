@@ -99,7 +99,10 @@ type Runtime struct {
 	provider llm.Provider
 	changed  chan struct{} // signals the monitor loop after Apply
 	store    *Store        // nil when settings persistence isn't available
-	log      *slog.Logger
+	// mode is a deploy-time constant (not a runtime setting) — it decides
+	// whether the agent may generate remediation proposals.
+	mode config.Mode
+	log  *slog.Logger
 }
 
 // NewRuntime builds the runtime from boot config (deployment defaults from
@@ -168,6 +171,7 @@ func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, er
 		provider: provider,
 		changed:  make(chan struct{}, 1),
 		store:    store,
+		mode:     cfg.Mode,
 		log:      log,
 	}, nil
 }
@@ -178,6 +182,12 @@ func (r *Runtime) Provider() llm.Provider {
 	defer r.mu.RUnlock()
 	return r.provider
 }
+
+// Mode returns the deploy-time operating mode (constant for the process).
+func (r *Runtime) Mode() config.Mode { return r.mode }
+
+// Assisted reports whether the agent may generate remediation proposals.
+func (r *Runtime) Assisted() bool { return r.mode == config.ModeAssisted }
 
 // View returns the current settings with all secrets masked.
 func (r *Runtime) View() SettingsView {

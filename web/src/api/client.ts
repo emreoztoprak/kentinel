@@ -161,6 +161,21 @@ export interface ServerSettings {
   inCluster: boolean;
   namespace: string;
   version: string; // "dev" outside a released build
+  mode: "readonly" | "assisted";
+}
+
+export interface Proposal {
+  id: string;
+  createdAt: string;
+  status: "pending" | "rejected" | "applied" | "failed";
+  kind: string;
+  namespace: string;
+  name: string;
+  rationale: string;
+  currentYaml: string;
+  proposedYaml: string;
+  decidedAt?: string;
+  error?: string;
 }
 
 // ---- API calls ----
@@ -222,6 +237,18 @@ export const api = {
       body: JSON.stringify(update),
     }),
   serverSettings: () => apiFetch<ServerSettings>("/api/v1/settings"),
+
+  // Remediation proposals (assisted mode). List/reject proxy to the agent;
+  // apply goes to the SERVER (it holds the write RBAC).
+  proposals: (pendingOnly = false) =>
+    apiFetch<{ proposals: Proposal[] }>(
+      `/api/v1/agent/proposals${pendingOnly ? "?pending=true" : ""}`,
+    ),
+  applyProposal: (id: string) =>
+    apiFetch<{ status: string; id: string }>(`/api/v1/proposals/${id}/apply`, { method: "POST" }),
+  rejectProposal: (id: string) =>
+    apiFetch<{ status: string }>(`/api/v1/agent/proposals/${id}/reject`, { method: "POST" }),
+
   testNotification: () =>
     apiFetch<{ status: string }>("/api/v1/agent/notifications/test", { method: "POST" }),
   metricsHealth: () => apiFetch<{ status: string }>("/api/v1/agent/metrics/health"),

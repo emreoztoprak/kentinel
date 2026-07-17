@@ -38,6 +38,24 @@ and validates the fields.
 user prompt ─► LLM ─► tool calls? ─► run tools (read-only) ─► results ─► LLM ─► ... ─► final answer
 ```
 
+## Assisted mode: remediation proposals
+
+When deployed with `mode: assisted` (see [security.md](security.md)), the
+query engine gains one extra tool, `propose_change`. If you ask the assistant
+to fix or change something, it reads the current manifest, then calls
+`propose_change` with the full modified manifest and a rationale. This makes
+**no change** — it records a *pending proposal* in the agent's database.
+
+The proposal appears in the dashboard's **Pending changes** panel as a diff.
+On approval, the **server** (which holds the write RBAC — the agent never
+does) applies it via the same guarded path as the manifest editor and records
+the result. Rejecting one is a no-op on the cluster. The status transitions
+(pending → applied/failed/rejected) with timestamps are the audit trail.
+
+In `readonly` mode the tool doesn't exist and the assistant only advises in
+text. Proposal generation is currently assistant-driven (you ask, it
+proposes); review-initiated proposals are a future enhancement.
+
 Available tools (all read-only, `internal/agent/tools.go`):
 
 | Tool | What it does |

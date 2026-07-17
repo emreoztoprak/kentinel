@@ -70,6 +70,7 @@ Key values (full reference: `charts/kentinel/values.yaml`):
 
 | Value | Default | Purpose |
 | --- | --- | --- |
+| `mode` | `readonly` | `readonly` = observe + Q&A only (server has no write RBAC); `assisted` = approval-gated remediation + manifest editor + terminal. See [security.md](security.md). Switching modes requires a redeploy |
 | `llm.provider` | `ollama` | `ollama`, `anthropic`, `openai`, `deepseek`, `gemini` |
 | `llm.apiKeys.<provider>` | — | API key for the chosen cloud provider |
 | `ollama.enabled` | `true` | Bundled local LLM (disable when using a cloud provider); `ollama.externalHost` points at your own Ollama |
