@@ -4,13 +4,16 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { agentQuery, type QueryEvent, type QueryTurn } from "../api/client";
 import { PageTitle } from "../components/ui";
-
-interface ChatEntry {
-  role: "user" | "assistant";
-  // Assistant entries are a sequence of steps: text blocks and tool calls.
-  steps: { kind: "text" | "tool" | "error"; content: string }[];
-  done: boolean;
-}
+import { timeAgo } from "../util";
+import {
+  type ChatEntry,
+  type Conversation,
+  deleteConversation,
+  loadConversations,
+  newConversationId,
+  titleFor,
+  upsertConversation,
+} from "../conversations";
 
 // describeTool turns a raw tool call ("get_pod_logs {\"namespace\":\"app\",
 // \"pod\":\"web-1\"}") into a readable activity line ("Reading logs for
@@ -65,6 +68,9 @@ export default function AssistantPage() {
   const [input, setInput] = useState("");
   const [chat, setChat] = useState<ChatEntry[]>([]);
   const [busy, setBusy] = useState(false);
+  const [convId, setConvId] = useState<string>(() => newConversationId());
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations());
+  const [showHistory, setShowHistory] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prefilled = useRef(false);
@@ -83,6 +89,36 @@ export default function AssistantPage() {
   }, [chat]);
 
   useEffect(() => () => abortRef.current?.(), []);
+
+  // Persist the current conversation whenever it changes (but not while a
+  // response is still streaming, to avoid churn and half-written turns).
+  useEffect(() => {
+    if (chat.length === 0 || busy) return;
+    setConversations(
+      upsertConversation({ id: convId, title: titleFor(chat), updatedAt: Date.now(), chat }),
+    );
+  }, [chat, busy, convId]);
+
+  const startNewChat = () => {
+    abortRef.current?.();
+    setBusy(false);
+    setChat([]);
+    setConvId(newConversationId());
+    setShowHistory(false);
+  };
+
+  const openConversation = (c: Conversation) => {
+    abortRef.current?.();
+    setBusy(false);
+    setConvId(c.id);
+    setChat(c.chat);
+    setShowHistory(false);
+  };
+
+  const removeConversation = (id: string) => {
+    setConversations(deleteConversation(id));
+    if (id === convId) startNewChat();
+  };
 
   const send = (prompt: string) => {
     const trimmed = prompt.trim();
@@ -154,7 +190,54 @@ export default function AssistantPage() {
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col">
-      <PageTitle>AI Assistant</PageTitle>
+      <PageTitle
+        actions={
+          <div className="relative flex items-center gap-2">
+            <button
+              className="btn-ghost border border-slate-300 text-sm dark:border-slate-700"
+              onClick={() => setShowHistory((v) => !v)}
+            >
+              History{conversations.length > 0 ? ` (${conversations.length})` : ""}
+            </button>
+            <button
+              className="btn-ghost border border-slate-300 text-sm dark:border-slate-700"
+              onClick={startNewChat}
+            >
+              + New chat
+            </button>
+            {showHistory && (
+              <div className="absolute right-0 top-full z-10 mt-2 max-h-96 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                {conversations.length === 0 ? (
+                  <p className="px-3 py-4 text-center text-sm text-slate-400">No past conversations yet.</p>
+                ) : (
+                  conversations.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`group flex items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                        c.id === convId ? "bg-slate-100 dark:bg-slate-800" : ""
+                      }`}
+                    >
+                      <button className="min-w-0 flex-1 text-left" onClick={() => openConversation(c)}>
+                        <div className="truncate">{c.title}</div>
+                        <div className="text-xs text-slate-400">{timeAgo(new Date(c.updatedAt).toISOString())} ago</div>
+                      </button>
+                      <button
+                        className="shrink-0 text-xs text-slate-400 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                        title="Delete conversation"
+                        onClick={() => removeConversation(c.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        }
+      >
+        AI Assistant
+      </PageTitle>
 
       <div className="flex-1 space-y-4 overflow-y-auto pb-4">
         {chat.length === 0 && (
