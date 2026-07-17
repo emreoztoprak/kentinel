@@ -47,7 +47,7 @@ read-only in the UI — change them in the manifests / compose file.
 | --- | --- | --- |
 | `PORT` | `8090` | HTTP listen port |
 | `LLM_PROVIDER` | `ollama` | `ollama` (local, free) or a cloud provider: `anthropic`, `openai`, `deepseek`, `gemini` |
-| `LLM_MODEL` | *(per provider)* | Model ID. Defaults: `qwen3` (ollama), `claude-opus-4-8` (anthropic), `gpt-5.1` (openai), `deepseek-chat` (deepseek), `gemini-2.5-flash` (gemini). The k8s manifests set `qwen3:0.6b` to fit small clusters |
+| `LLM_MODEL` | *(per provider)* | Model ID. Defaults: `qwen3:0.6b` (ollama), `claude-opus-4-8` (anthropic), `gpt-5.1` (openai), `deepseek-chat` (deepseek), `gemini-2.5-flash` (gemini). The k8s manifests set `qwen3:0.6b` to fit small clusters |
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=anthropic` |
 | `OPENAI_API_KEY` | — | Required when `LLM_PROVIDER=openai` |
 | `DEEPSEEK_API_KEY` | — | Required when `LLM_PROVIDER=deepseek` |
@@ -74,8 +74,8 @@ read-only in the UI — change them in the manifests / compose file.
    - k8s mode: `deploy/k8s/05-ollama.yaml` runs it in-cluster and auto-pulls
      `qwen3:0.6b` on first boot — nothing to do.
    - Docker mode: `docker compose --profile ollama up`, then
-     `docker compose exec ollama ollama pull qwen3` once.
-   - Local dev: install Ollama (<https://ollama.com>) and `ollama pull qwen3`.
+     `docker compose exec ollama ollama pull qwen3:0.6b` once.
+   - Local dev: install Ollama (<https://ollama.com>) and `ollama pull qwen3:0.6b`.
 2. The model must be **tool-calling-capable** — the query engine requires
    function calling. Known-good: `qwen3` / `qwen3:0.6b`, `llama3.1`,
    `mistral-nemo`.

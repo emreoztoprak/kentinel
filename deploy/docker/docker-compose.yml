@@ -3,7 +3,7 @@
 #
 #   cd deploy/docker
 #   docker compose --profile ollama up --build
-#   docker compose exec ollama ollama pull qwen3   # once
+#   docker compose exec ollama ollama pull qwen3:0.6b   # once
 #
 # To use Anthropic Claude instead (better analysis quality):
 #   export ANTHROPIC_API_KEY=sk-ant-...

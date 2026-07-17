@@ -124,6 +124,11 @@ func (p *Provider) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 	if err != nil {
 		return nil, fmt.Errorf("ollama: reading response: %w", err)
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		// Ollama returns 404 when the model isn't pulled — the most common
+		// cause of this error, so make it actionable instead of a bare 404.
+		return nil, fmt.Errorf("ollama: model %q is not installed on the server at %s — pick an installed model in Settings, or run `ollama pull %s`", p.model, p.host, p.model)
+	}
 	if resp.StatusCode != http.StatusOK {
 		// No response-body echo: the host is user-supplied (SSRF hygiene).
 		return nil, fmt.Errorf("ollama: HTTP %d from %s", resp.StatusCode, p.host)

@@ -365,6 +365,23 @@ func validateSettings(s Settings) error {
 	return nil
 }
 
+// pickOllamaModel chooses which Ollama model to use given a preferred name
+// and the set of models actually installed on the server. It returns the
+// preferred model when it's installed (or when the installed set is unknown,
+// e.g. the server was unreachable), otherwise the first installed model —
+// so "provider default" always resolves to something the server can run.
+func pickOllamaModel(preferred string, installed []string) string {
+	if len(installed) == 0 {
+		return preferred
+	}
+	for _, m := range installed {
+		if m == preferred {
+			return preferred
+		}
+	}
+	return installed[0]
+}
+
 // DefaultModel returns the default model ID for a provider.
 func DefaultModel(provider string) string {
 	switch provider {

@@ -98,7 +98,10 @@ func (a *API) handleModels(w http.ResponseWriter, r *http.Request) {
 		response := map[string]interface{}{
 			"provider": provider,
 			"models":   models,
-			"default":  DefaultModel(provider),
+			// Report a model that's actually installed as the default, so the
+			// UI's "provider default" never points at a model the server
+			// doesn't have (the hardcoded constant may not be pulled).
+			"default": pickOllamaModel(DefaultModel(provider), models),
 		}
 		if err != nil {
 			response["models"] = []string{}
@@ -140,6 +143,15 @@ func (a *API) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			"message": "invalid settings JSON: " + err.Error(),
 		})
 		return
+	}
+
+	// "Provider default" for Ollama (empty model) must resolve to a model the
+	// server actually has — otherwise switching back to Ollama picks the
+	// hardcoded default, which may not be pulled, and every review 404s.
+	if update.Provider == "ollama" && update.Model == "" {
+		if models, err := ollamallm.ListModels(r.Context(), update.OllamaHost); err == nil {
+			update.Model = pickOllamaModel(DefaultModel("ollama"), models)
+		}
 	}
 
 	view, err := a.runtime.Apply(update)

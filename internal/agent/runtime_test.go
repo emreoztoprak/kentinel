@@ -271,3 +271,24 @@ func TestNewRuntimeFallsBackWhenPersistedSettingsAreInvalid(t *testing.T) {
 		t.Errorf("provider = %q, want fallback to deployment default \"ollama\"", rt.View().Provider)
 	}
 }
+
+func TestPickOllamaModel(t *testing.T) {
+	cases := []struct {
+		name      string
+		preferred string
+		installed []string
+		want      string
+	}{
+		{"preferred is installed", "qwen3:0.6b", []string{"llama3.1", "qwen3:0.6b"}, "qwen3:0.6b"},
+		{"preferred NOT installed falls to first", "qwen3", []string{"qwen3:0.6b"}, "qwen3:0.6b"},
+		{"empty installed list keeps preferred (server unreachable)", "qwen3", nil, "qwen3"},
+		{"single installed, mismatched preferred", "mistral", []string{"llama3.1"}, "llama3.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pickOllamaModel(tc.preferred, tc.installed); got != tc.want {
+				t.Errorf("pickOllamaModel(%q, %v) = %q, want %q", tc.preferred, tc.installed, got, tc.want)
+			}
+		})
+	}
+}

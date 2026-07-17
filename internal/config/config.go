@@ -55,7 +55,11 @@ type Agent struct {
 // Defaults for the LLM providers. Overridable via LLM_MODEL.
 const (
 	DefaultAnthropicModel = "claude-opus-4-8"
-	DefaultOllamaModel    = "qwen3"
+	// Matches the model the bundled Ollama pulls (chart ollama.model /
+	// deploy/k8s LLM_MODEL) so "provider default" resolves to an installed
+	// model even when the server can't be queried. Small enough for modest
+	// clusters (~1.5GB RAM) and tool-calling capable.
+	DefaultOllamaModel = "qwen3:0.6b"
 )
 
 // APIKeyEnvNames maps each cloud provider to its API key env var (also the

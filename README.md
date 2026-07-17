@@ -96,7 +96,7 @@ Runs against any cluster your kubeconfig can reach — nothing to build:
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/emreoztoprak/kentinel/main/deploy/docker/docker-compose.yml
 docker compose --profile ollama up -d
-docker compose exec ollama ollama pull qwen3   # once
+docker compose exec ollama ollama pull qwen3:0.6b   # once
 # open http://localhost:8080
 ```
 

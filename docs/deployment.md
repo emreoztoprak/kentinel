@@ -29,7 +29,7 @@ Options (env vars read by the compose file):
 
 ```sh
 LLM_PROVIDER=ollama docker compose --profile ollama up --build
-docker compose exec ollama ollama pull qwen3   # once, ~GBs
+docker compose exec ollama ollama pull qwen3:0.6b   # once
 ```
 
 ### Docker mode with kind/minikube
