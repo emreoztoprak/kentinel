@@ -10,8 +10,8 @@ import { timeAgo } from "../util";
 // name/namespace/age only.
 const KIND_COLUMNS: Record<string, string[]> = {
   pods: ["status", "ready", "restarts", "node", "ip"],
-  deployments: ["ready", "updated", "available"],
-  statefulsets: ["ready", "updated", "available"],
+  deployments: ["ready", "updated", "available", "rollout"],
+  statefulsets: ["ready", "updated", "available", "rollout"],
   daemonsets: ["ready"],
   services: ["type", "clusterIP", "ports"],
   configmaps: ["keys"],

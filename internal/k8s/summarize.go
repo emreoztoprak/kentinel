@@ -87,11 +87,20 @@ func summarizeWorkload(obj *unstructured.Unstructured) map[string]string {
 	ready, _, _ := unstructured.NestedInt64(obj.Object, "status", "readyReplicas")
 	updated, _, _ := unstructured.NestedInt64(obj.Object, "status", "updatedReplicas")
 	available, _, _ := unstructured.NestedInt64(obj.Object, "status", "availableReplicas")
-	return map[string]string{
+	unavailable, _, _ := unstructured.NestedInt64(obj.Object, "status", "unavailableReplicas")
+	m := map[string]string{
 		"ready":     fmt.Sprintf("%d/%d", ready, desired),
 		"updated":   fmt.Sprintf("%d", updated),
 		"available": fmt.Sprintf("%d", available),
 	}
+	// A deployment can report available == desired (old pods still serving)
+	// while a rollout is stuck — the new ReplicaSet has a pod that can't
+	// become ready (e.g. ImagePullBackOff). availableReplicas alone would
+	// read as healthy and hide that, so surface the incomplete rollout.
+	if unavailable > 0 || updated < desired {
+		m["rollout"] = fmt.Sprintf("incomplete — %d unavailable", unavailable)
+	}
+	return m
 }
 
 func summarizeDaemonSet(obj *unstructured.Unstructured) map[string]string {

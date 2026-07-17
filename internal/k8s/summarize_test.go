@@ -53,6 +53,36 @@ func TestSummarizeWorkload(t *testing.T) {
 	if extra["ready"] != "2/3" {
 		t.Errorf("ready = %q, want 2/3", extra["ready"])
 	}
+
+	// A stuck rollout: 1 desired, 1 available (old pod still serving), but a
+	// new pod is unavailable (e.g. ImagePullBackOff). availableReplicas alone
+	// looks healthy — the summary must flag the incomplete rollout so the
+	// agent/dashboard don't call it fine.
+	stuck := &unstructured.Unstructured{Object: map[string]interface{}{
+		"spec": map[string]interface{}{"replicas": int64(1)},
+		"status": map[string]interface{}{
+			"readyReplicas":       int64(1),
+			"updatedReplicas":     int64(1),
+			"availableReplicas":   int64(1),
+			"unavailableReplicas": int64(1),
+		},
+	}}
+	if got := summarize("deployments", stuck)["rollout"]; got == "" {
+		t.Error("a stuck rollout (unavailableReplicas>0) must surface a rollout hint")
+	}
+
+	// A healthy steady-state deployment must NOT show a rollout hint.
+	healthy := &unstructured.Unstructured{Object: map[string]interface{}{
+		"spec": map[string]interface{}{"replicas": int64(2)},
+		"status": map[string]interface{}{
+			"readyReplicas":     int64(2),
+			"updatedReplicas":   int64(2),
+			"availableReplicas": int64(2),
+		},
+	}}
+	if got := summarize("deployments", healthy)["rollout"]; got != "" {
+		t.Errorf("healthy deployment must not show a rollout hint, got %q", got)
+	}
 }
 
 func TestSummarizeUnknownKindIsNil(t *testing.T) {
