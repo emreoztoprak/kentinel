@@ -67,7 +67,7 @@ prefix stripped.
 | `GET /api/v1/agent/status` | `{provider, model, latest}` — `latest` is the most recent insight or `null` |
 | `GET /api/v1/agent/insights?limit=&status=&since=&until=` | Review history, newest first. `limit` default 50 / max 500; `status` = healthy\|warning\|critical\|error; `since`/`until` RFC3339. Response includes `persistent: bool` |
 | `GET /api/v1/agent/insights/timeline?hours=24` | Compact trend points `[{t, status}]`, oldest first, max 168h |
-| `POST /api/v1/agent/query` | Body `{"prompt":"..."}` (max 8000 chars). **SSE** response |
+| `POST /api/v1/agent/query` | Body `{"messages":[{"role":"user","text":"..."}]}` — the full conversation, ending with the new user turn, so the assistant keeps context. Legacy `{"prompt":"..."}` still accepted. New turn max 8000 chars. **SSE** response |
 | `GET /api/v1/agent/config` | Runtime agent settings. The API key is reduced to `anthropicKeySet: bool` — never returned |
 | `PUT /api/v1/agent/config` | Update settings (see below). Live-applies on the agent, then persists encrypted to the agent's own database. The only way to change settings after the agent's first boot — see [security.md](security.md) |
 | `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`, `version`) |

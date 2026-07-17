@@ -261,9 +261,15 @@ export const api = {
   },
 };
 
-// agentQuery streams SSE events from the agent. Returns an abort function.
+export interface QueryTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+// agentQuery streams SSE events from the agent, sending the full conversation
+// so the assistant keeps context across turns. Returns an abort function.
 export function agentQuery(
-  prompt: string,
+  messages: QueryTurn[],
   onEvent: (ev: QueryEvent) => void,
   onError: (message: string) => void,
 ): () => void {
@@ -274,7 +280,7 @@ export function agentQuery(
       const res = await fetch("/api/v1/agent/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ messages }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {

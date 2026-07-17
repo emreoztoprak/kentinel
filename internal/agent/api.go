@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/emreoztoprak/kentinel/internal/llm"
 	ollamallm "github.com/emreoztoprak/kentinel/internal/llm/ollama"
 )
 
@@ -256,25 +257,79 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type queryMessage struct {
+	Role string `json:"role"` // "user" or "assistant"
+	Text string `json:"text"`
+}
+
 type queryRequest struct {
+	// Prompt is the legacy single-message form (still accepted).
 	Prompt string `json:"prompt"`
+	// Messages is the full conversation, oldest first, ending with the new
+	// user turn — so the assistant keeps context across the chat.
+	Messages []queryMessage `json:"messages"`
+}
+
+const (
+	maxQueryPromptLen  = 8000  // the new user turn
+	maxQueryHistoryLen = 60000 // total chars across all turns
+	maxQueryTurns      = 40    // most recent turns kept
+)
+
+// buildQueryHistory turns the request into the conversation to run, enforcing
+// role/shape/size limits. It returns the messages (ending in a user turn) or
+// an error message for a 400.
+func buildQueryHistory(req queryRequest) ([]llm.Message, string) {
+	turns := req.Messages
+	if len(turns) == 0 && req.Prompt != "" {
+		turns = []queryMessage{{Role: "user", Text: req.Prompt}}
+	}
+	// Keep only the most recent turns.
+	if len(turns) > maxQueryTurns {
+		turns = turns[len(turns)-maxQueryTurns:]
+	}
+
+	var msgs []llm.Message
+	for _, t := range turns {
+		if t.Role != "user" && t.Role != "assistant" {
+			continue // ignore unknown roles
+		}
+		if t.Text == "" {
+			continue
+		}
+		msgs = append(msgs, llm.Message{Role: t.Role, Text: t.Text})
+	}
+	if len(msgs) == 0 || msgs[len(msgs)-1].Role != "user" {
+		return nil, "the conversation must end with a user message"
+	}
+	if len(msgs[len(msgs)-1].Text) > maxQueryPromptLen {
+		return nil, "prompt is too long (max 8000 characters)"
+	}
+	// Bound total size by dropping oldest turns (never the final user turn).
+	total := 0
+	for _, m := range msgs {
+		total += len(m.Text)
+	}
+	for total > maxQueryHistoryLen && len(msgs) > 1 {
+		total -= len(msgs[0].Text)
+		msgs = msgs[1:]
+	}
+	return msgs, ""
 }
 
 // handleQuery runs one agentic query, streaming progress as SSE events.
 func (a *API) handleQuery(w http.ResponseWriter, r *http.Request) {
 	var req queryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		a.writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":   "bad_request",
-			"message": "request body must be JSON: {\"prompt\": \"...\"}",
+			"message": "request body must be JSON: {\"messages\": [{\"role\":\"user\",\"text\":\"...\"}]}",
 		})
 		return
 	}
-	if len(req.Prompt) > 8000 {
-		a.writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error":   "bad_request",
-			"message": "prompt is too long (max 8000 characters)",
-		})
+	history, badReq := buildQueryHistory(req)
+	if badReq != "" {
+		a.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request", "message": badReq})
 		return
 	}
 
@@ -293,7 +348,7 @@ func (a *API) handleQuery(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	a.query.Run(r.Context(), req.Prompt, func(ev QueryEvent) {
+	a.query.Run(r.Context(), history, func(ev QueryEvent) {
 		data, err := json.Marshal(ev)
 		if err != nil {
 			return

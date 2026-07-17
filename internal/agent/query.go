@@ -58,11 +58,16 @@ func NewQueryEngine(client *k8s.Client, runtime *Runtime, store *Store, log *slo
 	return &QueryEngine{k8s: client, runtime: runtime, store: store, log: log}
 }
 
-// Run executes one query, emitting progress events until "done" or "error".
-// emit is called from a single goroutine.
-func (q *QueryEngine) Run(ctx context.Context, prompt string, emit func(QueryEvent)) {
+// Run executes one query given the full conversation history (ending with the
+// new user turn), emitting progress events until "done" or "error". emit is
+// called from a single goroutine.
+func (q *QueryEngine) Run(ctx context.Context, history []llm.Message, emit func(QueryEvent)) {
 	start := time.Now()
-	q.log.Info("query started", "prompt", truncateForLog(prompt))
+	last := ""
+	if len(history) > 0 {
+		last = history[len(history)-1].Text
+	}
+	q.log.Info("query started", "prompt", truncateForLog(last), "turns", len(history))
 
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -70,7 +75,7 @@ func (q *QueryEngine) Run(ctx context.Context, prompt string, emit func(QueryEve
 	provider := q.runtime.Provider()
 	prom := q.runtime.Prometheus()
 	assisted := q.runtime.Assisted()
-	messages := []llm.Message{{Role: "user", Text: prompt}}
+	messages := append([]llm.Message(nil), history...)
 	tools := queryTools(prom != nil, assisted)
 
 	for iteration := 0; iteration < maxQueryIterations; iteration++ {

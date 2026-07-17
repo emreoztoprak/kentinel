@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { agentQuery, type QueryEvent } from "../api/client";
+import { agentQuery, type QueryEvent, type QueryTurn } from "../api/client";
 import { PageTitle } from "../components/ui";
 
 interface ChatEntry {
@@ -89,6 +89,21 @@ export default function AssistantPage() {
     if (!trimmed || busy) return;
     setInput("");
     setBusy(true);
+
+    // Build the conversation to send: prior turns (assistant text only, tool
+    // steps dropped) plus this new user message — so the agent has context.
+    const history: QueryTurn[] = chat
+      .map((e) => ({
+        role: e.role,
+        text: e.steps
+          .filter((s) => s.kind === "text")
+          .map((s) => s.content)
+          .join("")
+          .trim(),
+      }))
+      .filter((m) => m.text);
+    history.push({ role: "user", text: trimmed });
+
     setChat((prev) => [
       ...prev,
       { role: "user", steps: [{ kind: "text", content: trimmed }], done: true },
@@ -118,7 +133,7 @@ export default function AssistantPage() {
       });
 
     abortRef.current = agentQuery(
-      trimmed,
+      history,
       (ev: QueryEvent) => {
         if (ev.type === "text") appendStep({ kind: "text", content: ev.content });
         else if (ev.type === "tool") appendStep({ kind: "tool", content: ev.content });

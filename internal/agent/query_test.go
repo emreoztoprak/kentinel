@@ -58,7 +58,7 @@ func newQueryEngine(t *testing.T, provider llm.Provider) *QueryEngine {
 
 func runQuery(engine *QueryEngine, prompt string) []QueryEvent {
 	var events []QueryEvent
-	engine.Run(context.Background(), prompt, func(ev QueryEvent) { events = append(events, ev) })
+	engine.Run(context.Background(), []llm.Message{{Role: "user", Text: prompt}}, func(ev QueryEvent) { events = append(events, ev) })
 	return events
 }
 
