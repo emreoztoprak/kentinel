@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { agentQuery, type QueryEvent } from "../api/client";
 import { PageTitle } from "../components/ui";
 
@@ -98,7 +99,19 @@ export default function AssistantPage() {
       setChat((prev) => {
         const next = [...prev];
         const last = { ...next[next.length - 1] };
-        if (step.content) last.steps = [...last.steps, step];
+        const steps = [...last.steps];
+        if (step.content) {
+          const tail = steps[steps.length - 1];
+          // Coalesce consecutive streamed text deltas into one block so
+          // multi-line markdown (tables, lists) renders as a whole rather
+          // than as per-token fragments that never form valid markdown.
+          if (step.kind === "text" && tail?.kind === "text") {
+            steps[steps.length - 1] = { ...tail, content: tail.content + step.content };
+          } else {
+            steps.push(step);
+          }
+        }
+        last.steps = steps;
         last.done = done || last.done;
         next[next.length - 1] = last;
         return next;
@@ -175,9 +188,30 @@ export default function AssistantPage() {
                   ) : step.content ? (
                     <div
                       key={j}
-                      className="prose prose-sm max-w-none py-1 text-sm dark:prose-invert [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:text-xs dark:[&_code]:bg-slate-800 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5"
+                      className="max-w-none py-1 text-sm [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:text-xs dark:[&_code]:bg-slate-800 [&_h1]:my-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:my-2 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:my-2 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-slate-950 [&_pre]:p-2 [&_pre]:text-xs [&_pre_code]:bg-transparent [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5"
                     >
-                      <ReactMarkdown>{step.content}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          table: ({ children }) => (
+                            <div className="my-2 overflow-x-auto">
+                              <table className="w-full border-collapse text-xs">{children}</table>
+                            </div>
+                          ),
+                          th: ({ children }) => (
+                            <th className="border-b border-slate-300 px-2 py-1 text-left font-semibold dark:border-slate-600">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="border-b border-slate-100 px-2 py-1 align-top dark:border-slate-800">
+                              {children}
+                            </td>
+                          ),
+                        }}
+                      >
+                        {step.content}
+                      </ReactMarkdown>
                     </div>
                   ) : null,
                 )}

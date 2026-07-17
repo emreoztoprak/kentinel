@@ -2,8 +2,8 @@ apiVersion: v2
 name: kentinel
 description: The AI sentinel for your Kubernetes cluster — a modern console with an AI agent that reviews, alerts, and diagnoses using read-only tools.
 type: application
-version: 0.4.7
-appVersion: "0.4.7"
+version: 0.4.8
+appVersion: "0.4.8"
 home: https://github.com/emreoztoprak/kentinel
 sources:
   - https://github.com/emreoztoprak/kentinel
