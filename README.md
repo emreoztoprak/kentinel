@@ -4,6 +4,7 @@
 
 <h1 align="center">Kentinel</h1>
 <p align="center"><b>The AI sentinel for your Kubernetes cluster.</b></p>
+<p align="center"><a href="https://emreoztoprak.github.io/kentinel/">Documentation</a></p>
 
 A modern Kubernetes console with a built-in AI agent that continuously
 reviews your cluster, alerts you when something breaks (Discord / Slack /
@@ -166,6 +167,10 @@ make dev               # server :8080, agent :8090, Vite UI :5173
 ```
 
 ## Documentation
+
+Browsable at **[emreoztoprak.github.io/kentinel](https://emreoztoprak.github.io/kentinel/)**
+(built from `docs/` on every push), inside the app itself (sidebar → System →
+Documentation), or right here:
 
 | Doc | Contents |
 | --- | --- |

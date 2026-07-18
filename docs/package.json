@@ -1,0 +1,13 @@
+{
+  "name": "kentinel-docs",
+  "private": true,
+  "description": "VitePress documentation site for Kentinel (published to GitHub Pages)",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}

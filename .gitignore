@@ -10,6 +10,11 @@ go.work.sum
 # --- Frontend ---
 web/node_modules/
 web/dist/
+
+# --- Docs site (VitePress) ---
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 npm-debug.log*
 yarn-error.log*
 
