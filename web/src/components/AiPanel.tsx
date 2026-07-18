@@ -12,6 +12,11 @@ const STATUS_STYLES: Record<string, string> = {
   error: "border-slate-300 dark:border-slate-700",
 };
 
+// prettyInterval maps Go's "30m0s" to "30m" for display.
+function prettyInterval(d: string): string {
+  return d.replace(/0s$/, "").replace(/0m$/, "") || d;
+}
+
 // AiPanel shows the latest periodic cluster review on the dashboard,
 // including a prominent banner when something is wrong.
 export default function AiPanel() {
@@ -21,22 +26,52 @@ export default function AiPanel() {
     refetchInterval: 15_000,
     retry: false,
   });
+  const { data: config } = useQuery({ queryKey: ["agent-config"], queryFn: api.agentConfig, retry: false });
 
   return (
     <div
       className={`card border-2 p-4 ${STATUS_STYLES[data?.latest?.status ?? "error"] ?? STATUS_STYLES.error}`}
     >
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-base font-semibold">🤖 AI Cluster Review</span>
           {data?.latest && <StatusBadge status={data.latest.status} />}
         </div>
-        {data && (
-          <span className="text-xs text-slate-400">
-            {data.provider} / {data.model}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {config &&
+            (config.monitorEnabled ? (
+              <span
+                className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                title="The agent reviews the cluster on this schedule."
+              >
+                🔄 Every {prettyInterval(config.reviewInterval)}
+              </span>
+            ) : (
+              <span
+                className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                title="Turn periodic review on in Settings. The assistant still works on demand."
+              >
+                ⏸ Periodic review off
+              </span>
+            ))}
+          {data && (
+            <span className="text-xs text-slate-400">
+              {data.provider} / {data.model}
+            </span>
+          )}
+        </div>
       </div>
+
+      {config && !config.monitorEnabled && (
+        <p className="mb-2 text-sm text-slate-500">
+          Periodic review is off — no automatic checks are running. Any review shown below is the
+          last one before it was disabled. Enable it in{" "}
+          <Link to="/settings" className="text-indigo-500 hover:underline">
+            Settings
+          </Link>
+          .
+        </p>
+      )}
 
       {isLoading && <p className="text-sm text-slate-500">Checking agent status…</p>}
 
