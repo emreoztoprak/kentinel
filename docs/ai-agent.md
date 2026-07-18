@@ -207,7 +207,8 @@ message is a color-coded embed with the summary and the top findings.
 Integrations → Webhooks → New Webhook → Copy Webhook URL. Paste it into
 Settings → Notifications, enable, save, then click **Send test notification**
 to verify the channel. The webhook URL is write-only (never returned by the
-API) and, in k8s mode, persisted to the `agent-secrets` Secret.
+API) and persisted, encrypted, to the agent's own database — like every
+setting changed from the UI (see [security.md](security.md)).
 
 ## Daily report
 
