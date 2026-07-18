@@ -74,6 +74,11 @@ notifications:
   discordWebhookUrl: ""
   slackWebhookUrl: ""
   teamsWebhookUrl: ""
+  # Daily digest (last 24h: reviews, incidents, changes, LLM usage) sent to
+  # the same webhooks once a day.
+  report:
+    enabled: false
+    time: "08:00" # "HH:MM", 24-hour, UTC
 
 # --- UI server ---
 server:

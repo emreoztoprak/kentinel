@@ -60,6 +60,8 @@ read-only in the UI — change them in the manifests / compose file.
 | `SLACK_WEBHOOK_URL` | — | Slack incoming webhook (`https://hooks.slack.com/...`). Write-only in the API/UI |
 | `TEAMS_WEBHOOK_URL` | — | Microsoft Teams Workflows webhook (Adaptive Card payload). Write-only in the API/UI |
 | `NOTIFY_MIN_SEVERITY` | `warning` | `warning` = alert on any degradation; `critical` = only page for outages (recoveries from qualifying states still notify) |
+| `REPORT_ENABLED` | `false` | Send a daily digest of the last 24h (reviews, incidents, remediation proposals, LLM usage) to the same webhooks. Pure reporting from stored data — no extra LLM calls |
+| `REPORT_TIME` | `08:00` | When the daily report goes out — `HH:MM`, 24-hour, **UTC** |
 | `INSIGHT_DB_PATH` | *(empty)* | SQLite file for persistent review history (e.g. `/data/insights.db`). Empty = in-memory only, history lost on restart. The k8s manifests set this and mount a PVC |
 | `INSIGHT_RETENTION_DAYS` | `90` | Reviews older than this are pruned from the database. Seeds the first-boot default; changeable at runtime from the Settings page (1–3650 days) |
 | `PROMETHEUS_URL` | *(empty)* | Prometheus base URL for the agent's metrics tools (usage, throttling). The k8s manifests point this at the bundled Prometheus; set your own to reuse an existing one. Empty = metrics tools disabled |

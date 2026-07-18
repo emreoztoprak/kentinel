@@ -25,6 +25,7 @@ type Notification struct {
 	Summary  string
 	Findings []Finding
 	Test     bool // true for "Send test notification"
+	Report   bool // true for the daily report digest
 }
 
 // Dispatcher decides when a review result warrants a notification and sends
@@ -233,6 +234,14 @@ func embedStyle(n Notification) (title string, color int) {
 	prefix := ""
 	if n.Test {
 		prefix = "[TEST] "
+	}
+	if n.Report {
+		colors := map[Status]int{StatusCritical: 0xE74C3C, StatusWarning: 0xF1C40F}
+		c, ok := colors[n.Status]
+		if !ok {
+			c = 0x2ECC71
+		}
+		return prefix + "📋 Kentinel daily report — " + strings.ToUpper(string(n.Status)), c
 	}
 	switch n.Status {
 	case StatusCritical:

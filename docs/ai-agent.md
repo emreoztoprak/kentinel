@@ -209,6 +209,30 @@ Settings → Notifications, enable, save, then click **Send test notification**
 to verify the channel. The webhook URL is write-only (never returned by the
 API) and, in k8s mode, persisted to the `agent-secrets` Secret.
 
+## Daily report
+
+Independently of transition alerts, the agent can send a once-a-day digest
+of the last 24 hours to the same webhooks — enable it in Settings →
+Notifications (or `REPORT_ENABLED` / `REPORT_TIME`, "HH:MM" UTC). It
+contains:
+
+- **Reviews** — how many ran, the healthy/warning/critical breakdown, and
+  how many times the status dipped below healthy (incidents)
+- **Now** — the latest review's status and summary
+- **Changes** — every remediation proposal created or decided in the window,
+  with its outcome (`applied`, `rejected`, `pending`, `failed`). The report
+  is the *record* of what changed — every applied change still went through
+  an explicit human approval (see [security.md](security.md))
+- **LLM usage** — calls and tokens over the window, with an estimated cost
+  for priced cloud providers
+
+The report is composed entirely from data the agent already stores (review
+history, proposals, token usage) — it makes **no extra LLM calls** and no
+cluster requests, so it's free to run even on cloud providers. **Send report
+now** on the Settings page delivers today's digest immediately, schedule or
+not. At most one scheduled report is sent per UTC day; if the agent pod is
+down at the send minute, that day's report is skipped, not queued.
+
 ## Providers
 
 `internal/llm.Provider` is the seam:

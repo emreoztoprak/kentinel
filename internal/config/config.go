@@ -70,6 +70,11 @@ type Agent struct {
 	TeamsWebhook         string
 	NotifyMinSeverity    string // "warning" or "critical"
 
+	// Daily report: a 24h digest (reviews, changes, LLM usage) sent to the
+	// notification webhooks once a day at ReportTime.
+	ReportEnabled bool
+	ReportTime    string // "HH:MM", 24-hour, UTC
+
 	// Insight persistence. Empty path = in-memory only (history is lost on
 	// restart).
 	InsightDBPath        string
@@ -97,7 +102,20 @@ const (
 	// manifests / chart; the max is a sanity cap (~10 years).
 	DefaultInsightRetentionDays = 90
 	MaxInsightRetentionDays     = 3650
+
+	// DefaultReportTime is when the daily report goes out (UTC).
+	DefaultReportTime = "08:00"
 )
+
+// ParseReportTime validates an "HH:MM" (24-hour) report time and returns the
+// hour and minute. Shared by env loading and the settings API.
+func ParseReportTime(v string) (hour, minute int, err error) {
+	t, err := time.Parse("15:04", v)
+	if err != nil {
+		return 0, 0, fmt.Errorf("report time %q is invalid (expected \"HH:MM\" 24-hour, e.g. \"08:00\")", v)
+	}
+	return t.Hour(), t.Minute(), nil
+}
 
 // APIKeyEnvNames maps each cloud provider to its API key env var (also the
 // key name in the agent-secrets Secret).
@@ -146,6 +164,10 @@ func LoadAgent() (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	report, err := envBool("REPORT_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 	retentionDays, err := envInt("INSIGHT_RETENTION_DAYS", 90)
 	if err != nil {
 		return nil, err
@@ -184,6 +206,9 @@ func LoadAgent() (*Agent, error) {
 		TeamsWebhook:         envStr("TEAMS_WEBHOOK_URL", ""),
 		NotifyMinSeverity:    envStr("NOTIFY_MIN_SEVERITY", "warning"),
 
+		ReportEnabled: report,
+		ReportTime:    envStr("REPORT_TIME", DefaultReportTime),
+
 		InsightDBPath:        envStr("INSIGHT_DB_PATH", ""),
 		InsightRetentionDays: retentionDays,
 
@@ -196,6 +221,12 @@ func LoadAgent() (*Agent, error) {
 	}
 	if cfg.NotificationsEnabled && cfg.DiscordWebhook == "" && cfg.SlackWebhook == "" && cfg.TeamsWebhook == "" {
 		return nil, fmt.Errorf("NOTIFICATIONS_ENABLED=true requires at least one of DISCORD_WEBHOOK_URL, SLACK_WEBHOOK_URL, TEAMS_WEBHOOK_URL")
+	}
+	if _, _, err := ParseReportTime(cfg.ReportTime); err != nil {
+		return nil, fmt.Errorf("REPORT_TIME: %w", err)
+	}
+	if cfg.ReportEnabled && cfg.DiscordWebhook == "" && cfg.SlackWebhook == "" && cfg.TeamsWebhook == "" {
+		return nil, fmt.Errorf("REPORT_ENABLED=true requires at least one of DISCORD_WEBHOOK_URL, SLACK_WEBHOOK_URL, TEAMS_WEBHOOK_URL")
 	}
 
 	switch cfg.Provider {

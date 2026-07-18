@@ -116,6 +116,33 @@ func (s *Store) ListProposals(onlyPending bool) ([]Proposal, error) {
 	return out, rows.Err()
 }
 
+// ProposalsSince returns proposals created OR decided within the window,
+// newest first — the daily report's "what changed" section.
+func (s *Store) ProposalsSince(since time.Time) ([]Proposal, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	cutoff := since.UTC().Format(time.RFC3339Nano)
+	rows, err := s.db.Query(
+		`SELECT id, created_at, status, kind, namespace, name, rationale, current_yaml, proposed_yaml, decided_at, error
+		 FROM proposals WHERE created_at >= ? OR (decided_at != '' AND decided_at >= ?)
+		 ORDER BY created_at DESC LIMIT 100`, cutoff, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("listing recent proposals: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Proposal
+	for rows.Next() {
+		p, err := scanProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // GetProposal returns one proposal by ID.
 func (s *Store) GetProposal(id string) (Proposal, bool, error) {
 	if s.db == nil {

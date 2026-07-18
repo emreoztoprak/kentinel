@@ -54,7 +54,8 @@ func run() error {
 
 	queryEngine := agent.NewQueryEngine(client, runtime, store, log)
 	notifier := agent.NewDispatcher(runtime, log)
-	api := agent.NewAPI(store, queryEngine, runtime, notifier, log)
+	reporter := agent.NewReporter(store, runtime, notifier, log)
+	api := agent.NewAPI(store, queryEngine, runtime, notifier, reporter, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -63,6 +64,8 @@ func run() error {
 	// it re-reads every iteration (configurable from the UI).
 	monitor := agent.NewMonitor(client, runtime, store, notifier, log)
 	go monitor.Run(ctx)
+	// Same pattern for the daily report scheduler.
+	go reporter.Run(ctx)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

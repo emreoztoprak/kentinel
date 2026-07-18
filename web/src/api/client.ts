@@ -133,6 +133,8 @@ export interface AgentConfig {
   slackWebhookSet: boolean;
   teamsWebhookSet: boolean;
   notifyMinSeverity: string;
+  reportEnabled: boolean;
+  reportTime: string; // "HH:MM" UTC
   prometheusUrl: string;
   insightRetentionDays: number;
   // Whether this state survives a pod restart (a working SQLite file +
@@ -153,6 +155,8 @@ export interface AgentConfigUpdate {
   slackWebhookUrl?: string; // write-only; empty = keep existing
   teamsWebhookUrl?: string; // write-only; empty = keep existing
   notifyMinSeverity: string;
+  reportEnabled: boolean;
+  reportTime: string; // "HH:MM" UTC; empty = keep/default
   prometheusUrl: string; // empty disables metrics
   insightRetentionDays: number; // 0 = leave unchanged
 }
@@ -273,6 +277,8 @@ export const api = {
 
   testNotification: () =>
     apiFetch<{ status: string }>("/api/v1/agent/notifications/test", { method: "POST" }),
+  sendReport: () =>
+    apiFetch<{ status: string }>("/api/v1/agent/report/send", { method: "POST" }),
   metricsHealth: () => apiFetch<{ status: string }>("/api/v1/agent/metrics/health"),
   agentModels: (provider: string, host?: string) => {
     const params = new URLSearchParams({ provider });

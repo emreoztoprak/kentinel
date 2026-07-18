@@ -73,6 +73,7 @@ prefix stripped.
 | `GET /api/v1/settings` | Server's own read-only settings (`agentUrl`, `staticDir`, `inCluster`, `namespace`, `version`) |
 | `GET /api/v1/agent/models?provider=&host=` | Selectable models: installed Ollama models or the curated Claude list |
 | `POST /api/v1/agent/notifications/test` | Send a test notification to every configured webhook (Discord/Slack/Teams) |
+| `POST /api/v1/agent/report/send` | Build and send the daily report (24h digest) immediately to every configured webhook — works whether or not the schedule is enabled. 400 when no webhook is configured |
 | `GET /api/v1/agent/proposals?pending=` | List remediation proposals (assisted mode). `pending=true` = actionable set only |
 | `POST /api/v1/agent/proposals/{id}/reject` | Reject a pending proposal (no cluster action) |
 | `POST /api/v1/proposals/{id}/apply` | **Server** endpoint (not proxied): apply an approved proposal. 403 in readonly mode; the server fetches the proposal from the agent, applies it, and records the outcome |
@@ -94,6 +95,8 @@ prefix stripped.
   "slackWebhookUrl": "https://hooks.slack.com/services/...",   // optional, write-only
   "teamsWebhookUrl": "https://...",                            // optional, write-only (Workflows webhook)
   "notifyMinSeverity": "warning",  // "warning" | "critical"
+  "reportEnabled": false,          // daily 24h digest to the same webhooks
+  "reportTime": "08:00",           // "HH:MM" 24-hour UTC; empty = keep current
   "prometheusUrl": "http://prometheus.kentinel.svc:9090", // plain field; empty DISABLES metrics
   "insightRetentionDays": 90            // review-history retention, 1–3650; 0 = leave unchanged
 }

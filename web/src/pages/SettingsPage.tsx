@@ -83,6 +83,8 @@ function AgentSettingsForm({
     slackWebhookUrl: "",
     teamsWebhookUrl: "",
     notifyMinSeverity: config.notifyMinSeverity || "warning",
+    reportEnabled: config.reportEnabled,
+    reportTime: config.reportTime || "08:00",
     prometheusUrl: config.prometheusUrl,
     insightRetentionDays: config.insightRetentionDays,
   });
@@ -99,6 +101,8 @@ function AgentSettingsForm({
       monitorEnabled: config.monitorEnabled,
       notificationsEnabled: config.notificationsEnabled,
       notifyMinSeverity: config.notifyMinSeverity || "warning",
+      reportEnabled: config.reportEnabled,
+      reportTime: config.reportTime || "08:00",
       prometheusUrl: config.prometheusUrl,
       insightRetentionDays: config.insightRetentionDays,
     }));
@@ -313,6 +317,39 @@ function AgentSettingsForm({
               />
             </Field>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field
+              label="Daily report"
+              hint="A 24h digest — reviews, incidents, applied changes, LLM usage — sent to the channels above."
+            >
+              <div className="flex h-9 items-center gap-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.reportEnabled}
+                    onChange={(e) => set("reportEnabled", e.target.checked)}
+                  />
+                  enabled
+                </label>
+                <input
+                  className="input w-28"
+                  type="time"
+                  value={form.reportTime}
+                  onChange={(e) => set("reportTime", e.target.value)}
+                  disabled={!form.reportEnabled}
+                />
+                <span className="text-xs text-slate-400">UTC</span>
+              </div>
+            </Field>
+            <Field label="Preview" hint="Sends today's digest immediately, schedule or not.">
+              <SendReportButton
+                anyConfigured={
+                  config.discordWebhookSet || config.slackWebhookSet || config.teamsWebhookSet
+                }
+              />
+            </Field>
+          </div>
         </div>
       </div>
 
@@ -406,6 +443,29 @@ function TestNotificationButton({ anyConfigured }: { anyConfigured: boolean }) {
       )}
       {test.error != null && (
         <p className="mt-1 break-words text-xs text-red-500">{(test.error as Error).message}</p>
+      )}
+    </div>
+  );
+}
+
+function SendReportButton({ anyConfigured }: { anyConfigured: boolean }) {
+  const send = useMutation({ mutationFn: api.sendReport });
+  return (
+    <div>
+      <button
+        type="button"
+        className="btn-ghost border border-slate-300 dark:border-slate-700"
+        disabled={!anyConfigured || send.isPending}
+        onClick={() => send.mutate()}
+        title={anyConfigured ? "Build and send the report now" : "Configure a webhook first"}
+      >
+        {send.isPending ? "Sending..." : "Send report now"}
+      </button>
+      {send.isSuccess && (
+        <p className="mt-1 text-xs text-emerald-600">✓ Sent to all configured channels</p>
+      )}
+      {send.error != null && (
+        <p className="mt-1 break-words text-xs text-red-500">{(send.error as Error).message}</p>
       )}
     </div>
   );

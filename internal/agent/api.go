@@ -20,12 +20,13 @@ type API struct {
 	query    *QueryEngine
 	runtime  *Runtime
 	notifier *Dispatcher
+	reporter *Reporter
 	log      *slog.Logger
 }
 
 // NewAPI wires the agent's HTTP surface.
-func NewAPI(store *Store, query *QueryEngine, runtime *Runtime, notifier *Dispatcher, log *slog.Logger) *API {
-	return &API{store: store, query: query, runtime: runtime, notifier: notifier, log: log}
+func NewAPI(store *Store, query *QueryEngine, runtime *Runtime, notifier *Dispatcher, reporter *Reporter, log *slog.Logger) *API {
+	return &API{store: store, query: query, runtime: runtime, notifier: notifier, reporter: reporter, log: log}
 }
 
 // Router builds the agent's HTTP routes.
@@ -42,6 +43,7 @@ func (a *API) Router() http.Handler {
 	r.Put("/config", a.handleUpdateConfig)
 	r.Get("/models", a.handleModels)
 	r.Post("/notifications/test", a.handleTestNotification)
+	r.Post("/report/send", a.handleSendReport)
 	r.Get("/metrics/health", a.handleMetricsHealth)
 	r.Get("/usage", a.handleUsage)
 
@@ -81,6 +83,20 @@ func (a *API) handleTestNotification(w http.ResponseWriter, r *http.Request) {
 	if err := a.notifier.SendTest(r.Context()); err != nil {
 		a.writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":   "notification_failed",
+			"message": err.Error(),
+		})
+		return
+	}
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+// handleSendReport builds and delivers the daily report immediately —
+// the Settings "Send report now" button. Works regardless of the schedule
+// being enabled, as long as a webhook is configured.
+func (a *API) handleSendReport(w http.ResponseWriter, r *http.Request) {
+	if err := a.reporter.Send(r.Context()); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "report_failed",
 			"message": err.Error(),
 		})
 		return

@@ -44,6 +44,9 @@ Ollama provider, no cluster data ever leaves your infrastructure.
 - **Discord / Slack / Teams notifications** — get alerted when the cluster
   status changes (healthy → warning → critical, and recoveries);
   transition-based, never spammy, configurable severity threshold
+- **Daily report** — an optional once-a-day digest to the same webhooks:
+  reviews and incidents in the last 24h, every proposed/applied change, and
+  LLM usage — built from stored data, no extra LLM calls
 - **Settings page** — view and change all agent parameters from the UI;
   changes apply live and persist encrypted to the agent's own database
 - **LLM usage & cost** — the dashboard tracks Kentinel's own token usage

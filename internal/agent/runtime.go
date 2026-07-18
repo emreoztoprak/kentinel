@@ -35,6 +35,9 @@ type Settings struct {
 	TeamsWebhook         string
 	NotifyMinSeverity    string // "warning" or "critical"
 
+	ReportEnabled bool
+	ReportTime    string // "HH:MM", 24-hour, UTC
+
 	PrometheusURL        string // empty = metrics tools disabled
 	InsightRetentionDays int    // review history kept this many days
 }
@@ -54,6 +57,9 @@ type SettingsView struct {
 	SlackWebhookSet      bool   `json:"slackWebhookSet"`
 	TeamsWebhookSet      bool   `json:"teamsWebhookSet"`
 	NotifyMinSeverity    string `json:"notifyMinSeverity"`
+
+	ReportEnabled bool   `json:"reportEnabled"`
+	ReportTime    string `json:"reportTime"`
 
 	PrometheusURL        string `json:"prometheusUrl"`
 	InsightRetentionDays int    `json:"insightRetentionDays"`
@@ -81,6 +87,10 @@ type SettingsUpdate struct {
 	SlackWebhook         string `json:"slackWebhookUrl,omitempty"`
 	TeamsWebhook         string `json:"teamsWebhookUrl,omitempty"`
 	NotifyMinSeverity    string `json:"notifyMinSeverity"`
+
+	ReportEnabled bool `json:"reportEnabled"`
+	// ReportTime: "HH:MM" UTC. Empty = keep/default ("08:00").
+	ReportTime string `json:"reportTime"`
 
 	// PrometheusURL is plain (not write-only): empty string DISABLES metrics.
 	PrometheusURL string `json:"prometheusUrl"`
@@ -128,6 +138,9 @@ func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, er
 		TeamsWebhook:         cfg.TeamsWebhook,
 		NotifyMinSeverity:    cfg.NotifyMinSeverity,
 
+		ReportEnabled: cfg.ReportEnabled,
+		ReportTime:    cfg.ReportTime,
+
 		PrometheusURL:        cfg.PrometheusURL,
 		InsightRetentionDays: cfg.InsightRetentionDays,
 	}
@@ -155,6 +168,10 @@ func NewRuntime(cfg *config.Agent, store *Store, log *slog.Logger) (*Runtime, er
 		// Old records saved before retention was configurable, or a bare cfg
 		// without the env set.
 		settings.InsightRetentionDays = config.DefaultInsightRetentionDays
+	}
+	if settings.ReportTime == "" {
+		// Records saved before the daily report existed.
+		settings.ReportTime = config.DefaultReportTime
 	}
 
 	provider, err := buildProvider(settings)
@@ -213,6 +230,9 @@ func (r *Runtime) View() SettingsView {
 		TeamsWebhookSet:      r.settings.TeamsWebhook != "",
 		NotifyMinSeverity:    r.settings.NotifyMinSeverity,
 
+		ReportEnabled: r.settings.ReportEnabled,
+		ReportTime:    r.settings.ReportTime,
+
 		PrometheusURL:        r.settings.PrometheusURL,
 		InsightRetentionDays: r.settings.InsightRetentionDays,
 		Persistent:           r.store != nil && r.store.SettingsPersistent(),
@@ -247,6 +267,20 @@ func (r *Runtime) NotificationSettings() (enabled bool, channels []NotificationC
 		channels = append(channels, NotificationChannel{Name: "teams", URL: r.settings.TeamsWebhook})
 	}
 	return r.settings.NotificationsEnabled, channels, r.settings.NotifyMinSeverity
+}
+
+// ReportSettings returns whether the daily report is enabled and its UTC
+// send time. The stored value is validated, so parse failures fall back to
+// the default silently.
+func (r *Runtime) ReportSettings() (enabled bool, hour, minute int) {
+	r.mu.RLock()
+	reportEnabled, at := r.settings.ReportEnabled, r.settings.ReportTime
+	r.mu.RUnlock()
+	hour, minute, err := config.ParseReportTime(at)
+	if err != nil {
+		hour, minute, _ = config.ParseReportTime(config.DefaultReportTime)
+	}
+	return reportEnabled, hour, minute
 }
 
 // Prometheus returns a client for the configured Prometheus, or nil when
@@ -336,6 +370,14 @@ func (r *Runtime) merge(update SettingsUpdate) (Settings, error) {
 		next.NotifyMinSeverity = "warning"
 	}
 
+	next.ReportEnabled = update.ReportEnabled
+	if update.ReportTime != "" {
+		next.ReportTime = update.ReportTime
+	}
+	if next.ReportTime == "" {
+		next.ReportTime = config.DefaultReportTime
+	}
+
 	next.PrometheusURL = strings.TrimRight(update.PrometheusURL, "/")
 
 	// 0 means "leave unchanged" so a client that omits the field doesn't
@@ -399,6 +441,12 @@ func validateSettings(s Settings) error {
 	}
 	if s.NotificationsEnabled && s.DiscordWebhook == "" && s.SlackWebhook == "" && s.TeamsWebhook == "" {
 		return fmt.Errorf("enabling notifications requires at least one webhook URL (Discord, Slack, or Teams)")
+	}
+	if _, _, err := config.ParseReportTime(s.ReportTime); err != nil {
+		return err
+	}
+	if s.ReportEnabled && s.DiscordWebhook == "" && s.SlackWebhook == "" && s.TeamsWebhook == "" {
+		return fmt.Errorf("enabling the daily report requires at least one webhook URL (Discord, Slack, or Teams)")
 	}
 	if s.InsightRetentionDays < 1 || s.InsightRetentionDays > config.MaxInsightRetentionDays {
 		return fmt.Errorf("insightRetentionDays %d is out of range (1–%d)", s.InsightRetentionDays, config.MaxInsightRetentionDays)

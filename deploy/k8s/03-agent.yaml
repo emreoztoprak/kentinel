@@ -82,6 +82,11 @@ spec:
               value: "false"
             - name: NOTIFY_MIN_SEVERITY
               value: "warning" # or "critical"
+            # Daily 24h digest to the same webhooks (also in the Settings UI).
+            - name: REPORT_ENABLED
+              value: "false"
+            - name: REPORT_TIME
+              value: "08:00" # "HH:MM", 24-hour, UTC
             # Insight history persistence (survives pod restarts; on the
             # agent-data PVC).
             - name: INSIGHT_DB_PATH

@@ -60,6 +60,8 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
       NOTIFY_MIN_SEVERITY: ${NOTIFY_MIN_SEVERITY:-warning}
+      REPORT_ENABLED: ${REPORT_ENABLED:-false}
+      REPORT_TIME: ${REPORT_TIME:-08:00}
       INSIGHT_DB_PATH: /data/insights.db
       # Point at a reachable Prometheus to enable the agent's metrics tools
       # (e.g. http://host.docker.internal:9090). Empty = disabled.

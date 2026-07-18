@@ -75,6 +75,10 @@ spec:
               value: {{ .Values.notifications.enabled | quote }}
             - name: NOTIFY_MIN_SEVERITY
               value: {{ .Values.notifications.minSeverity | quote }}
+            - name: REPORT_ENABLED
+              value: {{ .Values.notifications.report.enabled | quote }}
+            - name: REPORT_TIME
+              value: {{ .Values.notifications.report.time | quote }}
             {{- if .Values.agent.persistence.enabled }}
             - name: INSIGHT_DB_PATH
               value: "/data/insights.db"

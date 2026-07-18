@@ -345,6 +345,9 @@ type persistedSettings struct {
 	TeamsWebhook         string `json:"teamsWebhook"`
 	NotifyMinSeverity    string `json:"notifyMinSeverity"`
 
+	ReportEnabled bool   `json:"reportEnabled"`
+	ReportTime    string `json:"reportTime"`
+
 	PrometheusURL        string `json:"prometheusUrl"`
 	InsightRetentionDays int    `json:"insightRetentionDays"`
 }
@@ -360,6 +363,9 @@ func toPersistedSettings(s Settings) persistedSettings {
 		SlackWebhook:         s.SlackWebhook,
 		TeamsWebhook:         s.TeamsWebhook,
 		NotifyMinSeverity:    s.NotifyMinSeverity,
+
+		ReportEnabled: s.ReportEnabled,
+		ReportTime:    s.ReportTime,
 
 		PrometheusURL:        s.PrometheusURL,
 		InsightRetentionDays: s.InsightRetentionDays,
@@ -380,6 +386,9 @@ func (p persistedSettings) toSettings() (Settings, error) {
 		SlackWebhook:         p.SlackWebhook,
 		TeamsWebhook:         p.TeamsWebhook,
 		NotifyMinSeverity:    p.NotifyMinSeverity,
+
+		ReportEnabled: p.ReportEnabled,
+		ReportTime:    p.ReportTime,
 
 		PrometheusURL:        p.PrometheusURL,
 		InsightRetentionDays: p.InsightRetentionDays,
