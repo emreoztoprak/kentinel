@@ -4,6 +4,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DOCS, docRouteForHref } from "../docs";
 
+// The same docs, hosted on GitHub Pages — handy for sharing a URL. The
+// bundled copy stays primary: it matches the deployed version and works
+// offline / air-gapped.
+const DOCS_SITE_URL = "https://emreoztoprak.github.io/kentinel/";
+
 export default function DocsPage() {
   const { slug = "overview" } = useParams();
   const navigate = useNavigate();
@@ -46,6 +51,14 @@ export default function DocsPage() {
               </Link>
             ))}
           </nav>
+          <a
+            href={doc.slug === "overview" ? DOCS_SITE_URL : `${DOCS_SITE_URL}${doc.slug}.html`}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 block px-3 text-xs text-slate-400 hover:text-indigo-500 hover:underline"
+          >
+            View online ↗
+          </a>
         </div>
       </aside>
 
