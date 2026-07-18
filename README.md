@@ -6,6 +6,10 @@
 <p align="center"><b>The AI sentinel for your Kubernetes cluster.</b></p>
 <p align="center"><a href="https://emreoztoprak.github.io/kentinel/">Documentation</a></p>
 
+<p align="center">
+  <img src="docs/public/screenshots/kentinel-dashboard-dark.png" alt="Kentinel dashboard — the AI cluster review flagging a broken image tag, a pending pod, and a crash loop with concrete recommendations" width="900" />
+</p>
+
 A modern Kubernetes console with a built-in AI agent that continuously
 reviews your cluster, alerts you when something breaks (Discord / Slack /
 Teams), and answers ad-hoc questions like *"why is payments-api failing?
@@ -57,6 +61,17 @@ Ollama provider, no cluster data ever leaves your infrastructure.
 - **In-app documentation** — this entire docs set is browsable in the UI
   (sidebar → System → Documentation)
 - Dark mode, obviously.
+
+<div align="center">
+  <h3>Screenshots</h3>
+  <p>
+    <img src="docs/public/screenshots/kentinel-history-dark.png" alt="AI review history with status trend" width="49%" />
+    <img src="docs/public/screenshots/kentinel-pods-light.png" alt="Pod browser across namespaces" width="49%" />
+  </p>
+  <p>
+    <img src="docs/public/screenshots/kentinel-settings-light.png" alt="Settings — switch LLM providers, notifications, daily report" width="49%" />
+  </p>
+</div>
 
 ## Architecture (short version)
 

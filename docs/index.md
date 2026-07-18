@@ -37,6 +37,14 @@ features:
     details: Resource browser, Monaco YAML editing, log tailing, in-browser pod terminal, events, Prometheus-backed metrics — dark mode included.
 ---
 
+## See it
+
+![Kentinel dashboard — the AI cluster review flagging a broken image tag, a pending pod, and a crash loop, each with a concrete recommendation](/screenshots/kentinel-dashboard-dark.png)
+
+The staged demo above: four incidents deployed with `make demo-incident`,
+every one found and explained by the review loop — including the typo in
+`nginx:1.27-alpin`.
+
 ## Quickstart
 
 Runs local-first out of the box — a bundled Ollama and a bundled minimal
