@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -24,8 +25,9 @@ const querySystemPromptReadOnly = `
 
 // assisted appendix: the propose_change tool is available, gated by approval.
 const querySystemPromptAssisted = `
-- When the user asks you to fix, change, or update something, use the propose_change tool. First read the current manifest with get_resource, then propose the FULL modified manifest. This does NOT apply the change — it queues it for the user to approve.
-- Never claim you have applied or changed anything. You can only propose; a human approves and the system applies. Make changes minimal and targeted.`
+- When the user asks you to fix, change, or update something, use the propose_change tool. First read the current manifest with get_resource, then propose the FULL modified manifest. This does NOT apply the change — it queues it for the user to approve inline in this chat.
+- Never claim you have applied or changed anything. You can only propose; a human approves and the system applies. Make changes minimal and targeted (change only the fields that need changing).
+- After proposing, explain the change in detail so the user can decide with confidence: what exactly is changing (the specific field, its old value and new value), WHY this fixes the problem (reference the evidence you found — the event, log line, or status), what effect approving will have, and any risk or side effect (e.g. a rollout/restart). Be concrete and specific; do not just say "I've proposed a fix".`
 
 func querySystemPrompt(assisted bool) string {
 	if assisted {
@@ -107,7 +109,23 @@ func (q *QueryEngine) Run(ctx context.Context, history []llm.Message, emit func(
 		results := make([]llm.ToolResult, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
 			emit(QueryEvent{Type: "tool", Content: describeToolCall(call)})
-			output, err := runTool(queryCtx, q.k8s, prom, q.store, call)
+
+			var output string
+			var err error
+			if call.Name == "propose_change" {
+				// Handled here (not in runTool) so the created proposal can be
+				// surfaced as an inline approval card in the chat.
+				var prop *Proposal
+				output, prop, err = runProposeChange(queryCtx, q.k8s, q.store, call)
+				if err == nil && prop != nil {
+					if data, mErr := json.Marshal(prop); mErr == nil {
+						emit(QueryEvent{Type: "proposal", Content: string(data)})
+					}
+				}
+			} else {
+				output, err = runTool(queryCtx, q.k8s, prom, q.store, call)
+			}
+
 			result := llm.ToolResult{ID: call.ID, Name: call.Name, Content: output}
 			if err != nil {
 				// Tool errors go back to the model so it can adapt

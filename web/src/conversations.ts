@@ -5,7 +5,9 @@
 // conversations. History is per-browser by design.
 
 export interface ChatStep {
-  kind: "text" | "tool" | "error";
+  // "proposal": content is a remediation proposal ID; rendered as an inline
+  // approval card.
+  kind: "text" | "tool" | "error" | "proposal";
   content: string;
 }
 

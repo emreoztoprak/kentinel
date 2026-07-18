@@ -115,7 +115,9 @@ export interface TimelinePoint {
 }
 
 export interface QueryEvent {
-  type: "text" | "tool" | "done" | "error";
+  // "proposal": content is JSON of a Proposal (assisted mode) — rendered as
+  // an inline approval card.
+  type: "text" | "tool" | "done" | "error" | "proposal";
   content: string;
 }
 

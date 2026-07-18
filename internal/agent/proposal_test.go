@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/emreoztoprak/kentinel/internal/k8s"
+	"github.com/emreoztoprak/kentinel/internal/llm"
 )
 
 func newProposalStore(t *testing.T) *Store {
@@ -82,8 +84,13 @@ func TestProposeChangeToolValidatesAndSnapshots(t *testing.T) {
 
 	goodYAML := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: orders-api\n  namespace: shop\nspec:\n  replicas: 2\n"
 
+	call := func(kind, ns, name, yaml string) llm.ToolCall {
+		in, _ := json.Marshal(map[string]string{"kind": kind, "namespace": ns, "name": name, "proposedYaml": yaml, "rationale": "x"})
+		return llm.ToolCall{Name: "propose_change", Input: in}
+	}
+
 	// Mismatched name must be rejected before anything is stored.
-	if _, err := proposeChange(context.Background(), client, s, "deployments", "shop", "WRONG", goodYAML, "x"); err == nil {
+	if _, _, err := runProposeChange(context.Background(), client, s, call("deployments", "shop", "WRONG", goodYAML)); err == nil {
 		t.Error("propose_change must reject a manifest whose name != target")
 	}
 	if list, _ := s.ListProposals(false); len(list) != 0 {
@@ -91,12 +98,12 @@ func TestProposeChangeToolValidatesAndSnapshots(t *testing.T) {
 	}
 
 	// Valid proposal: stored pending, with a current snapshot for the diff.
-	out, err := proposeChange(context.Background(), client, s, "deployments", "shop", "orders-api", goodYAML, "bump replicas")
+	out, prop, err := runProposeChange(context.Background(), client, s, call("deployments", "shop", "orders-api", goodYAML))
 	if err != nil {
 		t.Fatalf("valid propose_change failed: %v", err)
 	}
-	if out == "" {
-		t.Error("expected a confirmation string for the model")
+	if out == "" || prop == nil || prop.ID == "" {
+		t.Errorf("expected a confirmation string and the created proposal, got out=%q prop=%v", out, prop)
 	}
 	list, _ := s.ListProposals(true)
 	if len(list) != 1 || list[0].CurrentYAML == "" || list[0].ProposedYAML != goodYAML {

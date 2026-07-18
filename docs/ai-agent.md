@@ -46,11 +46,14 @@ to fix or change something, it reads the current manifest, then calls
 `propose_change` with the full modified manifest and a rationale. This makes
 **no change** — it records a *pending proposal* in the agent's database.
 
-The proposal appears in the dashboard's **Pending changes** panel as a diff.
-On approval, the **server** (which holds the write RBAC — the agent never
-does) applies it via the same guarded path as the manifest editor and records
-the result. Rejecting one is a no-op on the cluster. The status transitions
-(pending → applied/failed/rejected) with timestamps are the audit trail.
+The proposal is shown as an **inline approval card** right in the chat — with
+the rationale and a full diff, plus Approve/Reject — so you decide without
+leaving the conversation. (The dashboard's **Pending changes** panel is the
+cross-conversation view of everything still awaiting approval.) On approval,
+the **server** (which holds the write RBAC — the agent never does) applies it
+via the same guarded path as the manifest editor and records the result.
+Rejecting one is a no-op on the cluster. The status transitions (pending →
+applied/failed/rejected) with timestamps are the audit trail.
 
 In `readonly` mode the tool doesn't exist and the assistant only advises in
 text. Proposal generation is currently assistant-driven (you ask, it

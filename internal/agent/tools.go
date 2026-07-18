@@ -115,9 +115,10 @@ const (
 	maxToolResultLen = 30000 // characters per tool result fed back to the model
 )
 
-// runTool executes one tool call. All cluster tools are read-only; the
-// metrics tools hit Prometheus (prom may be nil). propose_change writes ONLY
-// to the agent's own store (never the cluster) and requires a non-nil store.
+// runTool executes one read-only cluster/metrics tool call. propose_change is
+// NOT handled here — the query loop runs it separately (see runProposeChange)
+// so it can surface the created proposal as an inline approval card. prom may
+// be nil when metrics are disabled.
 func runTool(ctx context.Context, client *k8s.Client, prom *promClient, store *Store, call llm.ToolCall) (string, error) {
 	var args struct {
 		Kind         string `json:"kind"`
@@ -130,8 +131,6 @@ func runTool(ctx context.Context, client *k8s.Client, prom *promClient, store *S
 		Previous     bool   `json:"previous"`
 		Type         string `json:"type"`
 		Query        string `json:"query"`
-		ProposedYAML string `json:"proposedYaml"`
-		Rationale    string `json:"rationale"`
 	}
 	if len(call.Input) > 0 {
 		if err := json.Unmarshal(call.Input, &args); err != nil {
@@ -221,48 +220,59 @@ func runTool(ctx context.Context, client *k8s.Client, prom *promClient, store *S
 		}
 		return capString(renderSamples(samples, 50)), nil
 
-	case "propose_change":
-		return proposeChange(ctx, client, store, args.Kind, args.Namespace, args.Name, args.ProposedYAML, args.Rationale)
-
 	default:
 		return "", fmt.Errorf("unknown tool %q", call.Name)
 	}
 }
 
-// proposeChange records a remediation proposal for human approval. It makes
-// NO change to the cluster — it snapshots the current manifest (read-only),
-// validates the proposed one, and stores a pending proposal. Returns a short
-// confirmation for the model to relay to the user.
-func proposeChange(ctx context.Context, client *k8s.Client, store *Store, kind, namespace, name, proposedYAML, rationale string) (string, error) {
-	if store == nil {
-		return "", fmt.Errorf("proposals are unavailable (no persistent store)")
+// runProposeChange records a remediation proposal for human approval from a
+// propose_change tool call. It makes NO change to the cluster — it snapshots
+// the current manifest (read-only), validates the proposed one, and stores a
+// pending proposal. It returns the tool result string for the model AND the
+// created proposal so the query loop can surface an inline approval card.
+func runProposeChange(ctx context.Context, client *k8s.Client, store *Store, call llm.ToolCall) (string, *Proposal, error) {
+	var args struct {
+		Kind         string `json:"kind"`
+		Namespace    string `json:"namespace"`
+		Name         string `json:"name"`
+		ProposedYAML string `json:"proposedYaml"`
+		Rationale    string `json:"rationale"`
 	}
-	if proposedYAML == "" {
-		return "", fmt.Errorf("proposedYaml is required")
+	if len(call.Input) > 0 {
+		if err := json.Unmarshal(call.Input, &args); err != nil {
+			return "", nil, fmt.Errorf("invalid tool arguments: %w", err)
+		}
+	}
+	if store == nil {
+		return "", nil, fmt.Errorf("proposals are unavailable (no persistent store)")
+	}
+	if args.ProposedYAML == "" {
+		return "", nil, fmt.Errorf("proposedYaml is required")
 	}
 	// Validate the proposed manifest parses and its identity matches the
 	// target. The server re-validates this at apply time (authoritative
 	// guard in k8s.UpdateResource); this is early feedback for the model.
-	if err := k8s.ValidateManifestTarget(kind, namespace, name, proposedYAML); err != nil {
-		return "", err
+	if err := k8s.ValidateManifestTarget(args.Kind, args.Namespace, args.Name, args.ProposedYAML); err != nil {
+		return "", nil, err
 	}
 	// Snapshot the current manifest for the approval diff (read-only).
-	current, err := client.GetResource(ctx, kind, namespace, name)
+	current, err := client.GetResource(ctx, args.Kind, args.Namespace, args.Name)
 	if err != nil {
-		return "", fmt.Errorf("reading current %s %s: %w", kind, name, err)
+		return "", nil, fmt.Errorf("reading current %s %s: %w", args.Kind, args.Name, err)
 	}
 
 	p, err := store.SaveProposal(Proposal{
-		Kind: kind, Namespace: namespace, Name: name,
-		Rationale:    rationale,
+		Kind: args.Kind, Namespace: args.Namespace, Name: args.Name,
+		Rationale:    args.Rationale,
 		CurrentYAML:  current.YAML,
-		ProposedYAML: proposedYAML,
+		ProposedYAML: args.ProposedYAML,
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return fmt.Sprintf("Proposed a change to %s %s/%s (proposal %s). It is now pending the user's approval — it has NOT been applied. Tell the user to review and approve it in the Pending Changes panel.",
-		kind, namespace, name, p.ID), nil
+	result := fmt.Sprintf("Proposed a change to %s %s/%s (proposal %s). It is now pending the user's approval — it has NOT been applied. An approval card is shown to the user directly in this chat.",
+		args.Kind, args.Namespace, args.Name, p.ID)
+	return result, &p, nil
 }
 
 func marshalJSON(v interface{}) (string, error) {

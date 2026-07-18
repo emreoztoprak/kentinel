@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { agentQuery, type QueryEvent, type QueryTurn } from "../api/client";
+import { agentQuery, type Proposal, type QueryEvent, type QueryTurn } from "../api/client";
 import { PageTitle } from "../components/ui";
+import ProposalCard from "../components/ProposalCard";
 import { timeAgo } from "../util";
 import {
   type ChatEntry,
@@ -173,6 +174,7 @@ export default function AssistantPage() {
       (ev: QueryEvent) => {
         if (ev.type === "text") appendStep({ kind: "text", content: ev.content });
         else if (ev.type === "tool") appendStep({ kind: "tool", content: ev.content });
+        else if (ev.type === "proposal") appendStep({ kind: "proposal", content: ev.content });
         else if (ev.type === "error") {
           appendStep({ kind: "error", content: ev.content }, true);
           setBusy(false);
@@ -279,6 +281,8 @@ export default function AssistantPage() {
                     >
                       <span className="not-italic">🔍</span> {describeTool(step.content)}
                     </div>
+                  ) : step.kind === "proposal" ? (
+                    <InlineProposal key={j} json={step.content} />
                   ) : step.kind === "error" ? (
                     <div key={j} className="my-1.5 text-sm text-red-500">
                       {step.content}
@@ -347,6 +351,24 @@ export default function AssistantPage() {
           {busy ? "Working…" : "Send"}
         </button>
       </form>
+    </div>
+  );
+}
+
+// InlineProposal renders a remediation proposal (streamed as JSON) as an
+// approval card right inside the chat, so the user approves without leaving
+// the conversation.
+function InlineProposal({ json }: { json: string }) {
+  let proposal: Proposal | null = null;
+  try {
+    proposal = JSON.parse(json) as Proposal;
+  } catch {
+    proposal = null;
+  }
+  if (!proposal) return null;
+  return (
+    <div className="my-2">
+      <ProposalCard id={proposal.id} initial={proposal} compact />
     </div>
   );
 }
