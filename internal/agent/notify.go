@@ -26,6 +26,17 @@ type Notification struct {
 	Findings []Finding
 	Test     bool // true for "Send test notification"
 	Report   bool // true for the daily report digest
+
+	// Sections carry the daily report's content. They render as native
+	// structures per channel (Slack fields, Discord embed fields, Teams
+	// text blocks) — never as inline markdown, which Slack wouldn't render.
+	Sections []ReportSection
+}
+
+// ReportSection is one titled block of the daily report.
+type ReportSection struct {
+	Title string
+	Lines []string
 }
 
 // Dispatcher decides when a review result warrants a notification and sends
@@ -205,6 +216,12 @@ func sendDiscord(ctx context.Context, webhook string, n Notification) error {
 			Value: truncateRunes(value, 1000),
 		})
 	}
+	for _, s := range n.Sections {
+		embed.Fields = append(embed.Fields, discordField{
+			Name:  s.Title,
+			Value: truncateRunes(strings.Join(s.Lines, "\n"), 1000),
+		})
+	}
 
 	payload, err := json.Marshal(discordPayload{Embeds: []discordEmbed{embed}})
 	if err != nil {
@@ -317,6 +334,12 @@ func sendSlack(ctx context.Context, webhook string, n Notification) error {
 			Value: truncateRunes(value, 1000),
 		})
 	}
+	for _, s := range n.Sections {
+		attachment.Fields = append(attachment.Fields, slackField{
+			Title: s.Title,
+			Value: truncateRunes(strings.Join(s.Lines, "\n"), 1000),
+		})
+	}
 
 	return postJSON(ctx, "slack", webhook, slackPayload{Attachments: []slackAttachment{attachment}})
 }
@@ -360,6 +383,12 @@ func sendTeams(ctx context.Context, webhook string, n Notification) error {
 				"text": fmt.Sprintf("[%s] %s", strings.ToUpper(f.Severity), truncateRunes(f.Title, 200)),
 			},
 			map[string]interface{}{"type": "TextBlock", "wrap": true, "text": truncateRunes(value, 1000)},
+		)
+	}
+	for _, s := range n.Sections {
+		body = append(body,
+			map[string]interface{}{"type": "TextBlock", "wrap": true, "weight": "bolder", "text": s.Title},
+			map[string]interface{}{"type": "TextBlock", "wrap": true, "text": truncateRunes(strings.Join(s.Lines, "\n"), 1000)},
 		)
 	}
 

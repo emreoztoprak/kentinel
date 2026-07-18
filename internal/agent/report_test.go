@@ -16,13 +16,24 @@ func testReporter(t *testing.T, store *Store) (*Reporter, *Dispatcher) {
 	return NewReporter(store, rt, notifier, slog.Default()), notifier
 }
 
+// flatten joins headline and all section lines for content assertions.
+func flatten(headline string, sections []ReportSection) string {
+	var b strings.Builder
+	b.WriteString(headline + "\n")
+	for _, s := range sections {
+		b.WriteString(s.Title + "\n" + strings.Join(s.Lines, "\n") + "\n")
+	}
+	return b.String()
+}
+
 func TestReportBuildEmpty(t *testing.T) {
 	rp, _ := testReporter(t, NewStore(20))
-	status, text := rp.build()
+	status, headline, sections := rp.build()
 	if status != StatusHealthy {
 		t.Errorf("empty report status = %s, want healthy", status)
 	}
-	if !strings.Contains(text, "No cluster reviews ran") {
+	text := flatten(headline, sections)
+	if !strings.Contains(text, "no reviews ran") || !strings.Contains(text, "None ran") {
 		t.Errorf("empty report should say no reviews ran, got: %q", text)
 	}
 }
@@ -55,26 +66,31 @@ func TestReportBuildCountsAndChanges(t *testing.T) {
 	store.RecordUsage("ollama", "qwen3", "review", struct{ InputTokens, OutputTokens int }{1500, 300})
 
 	rp, _ := testReporter(t, store)
-	status, text := rp.build()
+	status, headline, sections := rp.build()
+	text := flatten(headline, sections)
 
 	if status != StatusHealthy {
 		t.Errorf("status = %s, want healthy (latest review)", status)
 	}
 	for _, want := range []string{
-		"4 in the last 24h", "2 healthy, 1 warning, 1 critical",
-		"applied — deployments shop/orders-api: Fix the image tag.",
+		"4 reviews", "2 ✅ healthy · 1 ⚠️ warning · 1 ⛔ critical",
+		"✅ applied · deployment shop/orders-api — Fix the image tag.",
 		"1.5k in / 300 out",
+		"free (local model)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("report missing %q:\n%s", want, text)
 		}
 	}
-	// Two dips below healthy (healthy→warning→critical→healthy = 1 incident).
+	// healthy→warning→critical→healthy = 1 incident.
 	if !strings.Contains(text, "1 time(s)") {
 		t.Errorf("expected 1 incident, got:\n%s", text)
 	}
 	if strings.Contains(text, "Long detail here") {
 		t.Errorf("rationale should be first line only:\n%s", text)
+	}
+	if strings.Contains(text, "**") {
+		t.Errorf("report must not contain markdown (Slack renders it literally):\n%s", text)
 	}
 }
 
@@ -104,6 +120,9 @@ func TestReportSendDelivers(t *testing.T) {
 	}
 	if !got.Report {
 		t.Error("delivered notification should have Report=true")
+	}
+	if len(got.Sections) == 0 {
+		t.Error("delivered report should carry sections")
 	}
 	title, _ := embedStyle(got)
 	if !strings.Contains(title, "daily report") {

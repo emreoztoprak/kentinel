@@ -72,11 +72,12 @@ func (rp *Reporter) Send(ctx context.Context) error {
 	if len(channels) == 0 {
 		return fmt.Errorf("no webhook URL is configured (Discord, Slack, or Teams)")
 	}
-	status, text := rp.build()
+	status, headline, sections := rp.build()
 	if err := rp.notifier.deliver(ctx, channels, Notification{
-		Status:  status,
-		Summary: text,
-		Report:  true,
+		Status:   status,
+		Summary:  headline,
+		Sections: sections,
+		Report:   true,
 	}); err != nil {
 		return err
 	}
@@ -84,16 +85,30 @@ func (rp *Reporter) Send(ctx context.Context) error {
 	return nil
 }
 
-// build composes the report text from stored data. The overall status (used
-// for the title and color) is the latest review's status.
-func (rp *Reporter) build() (Status, string) {
+var statusEmoji = map[Status]string{
+	StatusHealthy:  "✅",
+	StatusWarning:  "⚠️",
+	StatusCritical: "⛔",
+}
+
+var proposalEmoji = map[ProposalStatus]string{
+	ProposalApplied:  "✅",
+	ProposalRejected: "🚫",
+	ProposalPending:  "⏳",
+	ProposalFailed:   "❌",
+}
+
+// build composes the report as a one-line headline plus titled sections.
+// Formatting stays plain text + emoji: each channel renders the sections
+// natively (Slack fields, Discord embed fields, Teams text blocks), so no
+// markdown is used anywhere. The overall status (title and color) is the
+// latest review's status.
+func (rp *Reporter) build() (Status, string, []ReportSection) {
 	now := time.Now().UTC()
 	since := now.Add(-reportWindow)
-	var b strings.Builder
 
 	// Reviews: counts and incidents from the timeline (all points, not
 	// capped like History).
-	status := StatusHealthy
 	points, err := rp.store.Timeline(reportWindow)
 	if err != nil {
 		rp.log.Warn("report: querying timeline failed", "error", err)
@@ -112,6 +127,7 @@ func (rp *Reporter) build() (Status, string) {
 		}
 	}
 
+	status := StatusHealthy
 	latest := rp.store.Latest()
 	if latest != nil {
 		status = latest.Status
@@ -120,24 +136,34 @@ func (rp *Reporter) build() (Status, string) {
 		}
 	}
 
+	var reviews []string
 	if len(points) == 0 {
-		b.WriteString("No cluster reviews ran in the last 24h — periodic review may be disabled.\n")
+		reviews = append(reviews, "None ran — periodic review is off or the agent just started.")
 	} else {
-		b.WriteString(fmt.Sprintf("**Reviews** — %d in the last 24h: %d healthy, %d warning, %d critical",
-			len(points), counts[StatusHealthy], counts[StatusWarning], counts[StatusCritical]))
+		line := fmt.Sprintf("%d reviews: %d ✅ healthy · %d ⚠️ warning · %d ⛔ critical",
+			len(points), counts[StatusHealthy], counts[StatusWarning], counts[StatusCritical])
 		if counts[StatusError] > 0 {
-			b.WriteString(fmt.Sprintf(" (%d failed to run)", counts[StatusError]))
+			line += fmt.Sprintf(" · %d failed to run", counts[StatusError])
 		}
-		b.WriteString("\n")
+		reviews = append(reviews, line)
 		if incidents == 0 {
-			b.WriteString("**Incidents** — none: the cluster never dropped below healthy.\n")
+			reviews = append(reviews, "Never dropped below healthy 🎉")
 		} else {
-			b.WriteString(fmt.Sprintf("**Incidents** — %d time(s) the status dropped below healthy.\n", incidents))
+			reviews = append(reviews, fmt.Sprintf("Dropped below healthy %d time(s).", incidents))
 		}
 	}
 	if latest != nil && latest.Summary != "" {
-		b.WriteString(fmt.Sprintf("**Now** — %s: %s\n", strings.ToUpper(string(latest.Status)), latest.Summary))
+		// Label a review that predates the window as such — otherwise
+		// "no reviews ran" and a current-sounding verdict contradict
+		// each other.
+		label := "Current"
+		if age := now.Sub(latest.CreatedAt); age > reportWindow {
+			label = fmt.Sprintf("Last review, %s ago", humanDuration(age))
+		}
+		reviews = append(reviews, fmt.Sprintf("%s: %s %s — %s",
+			label, statusEmoji[status], strings.ToUpper(string(latest.Status)), latest.Summary))
 	}
+	sections := []ReportSection{{Title: "Cluster reviews (24h)", Lines: reviews}}
 
 	// Changes: remediation proposals created or decided in the window.
 	// Every line here had (or awaits) an explicit human decision — the
@@ -146,20 +172,21 @@ func (rp *Reporter) build() (Status, string) {
 	if err != nil {
 		rp.log.Warn("report: querying proposals failed", "error", err)
 	}
-	b.WriteString("\n")
+	var changes []string
 	if len(proposals) == 0 {
-		b.WriteString("**Changes** — no remediation proposals were made or decided.\n")
+		changes = append(changes, "No remediation proposals were made or decided.")
 	} else {
-		b.WriteString(fmt.Sprintf("**Changes** — %d remediation proposal(s):\n", len(proposals)))
 		for i, p := range proposals {
 			if i == 8 {
-				b.WriteString(fmt.Sprintf("• … and %d more (see the dashboard)\n", len(proposals)-8))
+				changes = append(changes, fmt.Sprintf("… and %d more — see the dashboard.", len(proposals)-8))
 				break
 			}
-			b.WriteString(fmt.Sprintf("• %s — %s %s/%s: %s\n",
-				p.Status, p.Kind, p.Namespace, p.Name, truncateRunes(firstLine(p.Rationale), 120)))
+			changes = append(changes, fmt.Sprintf("%s %s · %s %s/%s — %s",
+				proposalEmoji[p.Status], p.Status, singularKind(p.Kind), p.Namespace, p.Name,
+				truncateRunes(firstLine(p.Rationale), 110)))
 		}
 	}
+	sections = append(sections, ReportSection{Title: "Changes (human-approved)", Lines: changes})
 
 	// LLM usage over the same window.
 	view := rp.runtime.View()
@@ -171,15 +198,23 @@ func (rp *Reporter) build() (Status, string) {
 		for _, src := range usage.BySource {
 			calls += src.Calls
 		}
-		b.WriteString(fmt.Sprintf("\n**LLM usage** — %d calls, %s in / %s out tokens",
-			calls, formatTokens(usage.InputTokens), formatTokens(usage.OutputTokens)))
+		line := fmt.Sprintf("%d calls · %s in / %s out tokens",
+			calls, formatTokens(usage.InputTokens), formatTokens(usage.OutputTokens))
 		if usage.CostUSD > 0 {
-			b.WriteString(fmt.Sprintf(" (≈ $%.2f estimated)", usage.CostUSD))
+			line += fmt.Sprintf(" · ≈ $%.2f estimated", usage.CostUSD)
+		} else {
+			line += " · free (local model)"
 		}
-		b.WriteString("\n")
+		sections = append(sections, ReportSection{Title: "LLM usage", Lines: []string{line}})
 	}
 
-	return status, strings.TrimRight(b.String(), "\n")
+	// One-line headline shown above the sections.
+	headline := fmt.Sprintf("Last 24h: %d reviews · %d incident(s) · %d change(s).",
+		len(points), incidents, len(proposals))
+	if len(points) == 0 {
+		headline = fmt.Sprintf("Last 24h: no reviews ran · %d change(s).", len(proposals))
+	}
+	return status, headline, sections
 }
 
 func firstLine(s string) string {
@@ -187,6 +222,24 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// singularKind renders the resource-browser kind ("deployments") as a
+// readable singular ("deployment"). Crude trim; fine for display.
+func singularKind(kind string) string {
+	return strings.TrimSuffix(kind, "s")
+}
+
+// humanDuration renders an age compactly: "3h", "2d".
+func humanDuration(d time.Duration) string {
+	switch {
+	case d >= 48*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
 }
 
 // formatTokens renders token counts compactly (1234567 -> "1.2M").
