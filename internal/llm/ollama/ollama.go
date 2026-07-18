@@ -76,9 +76,11 @@ type chatRequest struct {
 }
 
 type chatResponse struct {
-	Message chatMessage `json:"message"`
-	Done    bool        `json:"done"`
-	Error   string      `json:"error"`
+	Message         chatMessage `json:"message"`
+	Done            bool        `json:"done"`
+	Error           string      `json:"error"`
+	PromptEvalCount int         `json:"prompt_eval_count"` // input tokens
+	EvalCount       int         `json:"eval_count"`        // output tokens
 }
 
 // Chat implements llm.Provider.
@@ -142,7 +144,10 @@ func (p *Provider) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 		return nil, fmt.Errorf("ollama: %s", parsed.Error)
 	}
 
-	out := &llm.ChatResponse{Text: parsed.Message.Content}
+	out := &llm.ChatResponse{
+		Text:  parsed.Message.Content,
+		Usage: llm.TokenUsage{InputTokens: parsed.PromptEvalCount, OutputTokens: parsed.EvalCount},
+	}
 	for i, tc := range parsed.Message.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, llm.ToolCall{
 			// Ollama has no call IDs; synthesize stable ones for this turn.

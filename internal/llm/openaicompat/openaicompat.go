@@ -90,6 +90,10 @@ type chatResponse struct {
 	Choices []struct {
 		Message chatMessage `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
@@ -156,7 +160,10 @@ func (p *Provider) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 	}
 
 	message := parsed.Choices[0].Message
-	out := &llm.ChatResponse{Text: message.Content}
+	out := &llm.ChatResponse{
+		Text:  message.Content,
+		Usage: llm.TokenUsage{InputTokens: parsed.Usage.PromptTokens, OutputTokens: parsed.Usage.CompletionTokens},
+	}
 	for i, tc := range message.ToolCalls {
 		id := tc.ID
 		if id == "" {
@@ -221,10 +228,10 @@ func truncate(s string, n int) string {
 
 // Preset describes one OpenAI-compatible provider offering.
 type Preset struct {
-	Name        string
-	BaseURL     string
+	Name         string
+	BaseURL      string
 	DefaultModel string
-	KnownModels []string
+	KnownModels  []string
 }
 
 // Presets are the built-in OpenAI-compatible providers. Model lists are

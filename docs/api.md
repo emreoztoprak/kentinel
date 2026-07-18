@@ -77,6 +77,7 @@ prefix stripped.
 | `POST /api/v1/agent/proposals/{id}/reject` | Reject a pending proposal (no cluster action) |
 | `POST /api/v1/proposals/{id}/apply` | **Server** endpoint (not proxied): apply an approved proposal. 403 in readonly mode; the server fetches the proposal from the agent, applies it, and records the outcome |
 | `GET /api/v1/agent/metrics/health` | Check Prometheus connectivity (400 = not configured, 502 = unreachable) |
+| `GET /api/v1/agent/usage?days=` | Token usage (input/output, split by review/query source) over the window + an **estimated** cost for priced providers. `days` default 30, max 365 |
 
 ### PUT /api/v1/agent/config
 

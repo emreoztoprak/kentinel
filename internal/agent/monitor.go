@@ -122,6 +122,8 @@ func (m *Monitor) review(ctx context.Context, provider llm.Provider) *Insight {
 	if err != nil {
 		return &Insight{Status: StatusError, Summary: "The LLM review call failed.", ReviewError: err.Error()}
 	}
+	m.store.RecordUsage(provider.Name(), provider.Model(), "review",
+		struct{ InputTokens, OutputTokens int }{resp.Usage.InputTokens, resp.Usage.OutputTokens})
 
 	insight, err := parseInsight(resp.Text)
 	if err != nil {

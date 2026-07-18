@@ -93,6 +93,10 @@ func (q *QueryEngine) Run(ctx context.Context, history []llm.Message, emit func(
 			emit(QueryEvent{Type: "error", Content: "LLM request failed: " + err.Error()})
 			return
 		}
+		if q.store != nil {
+			q.store.RecordUsage(provider.Name(), provider.Model(), "query",
+				struct{ InputTokens, OutputTokens int }{resp.Usage.InputTokens, resp.Usage.OutputTokens})
+		}
 
 		if resp.Text != "" {
 			emit(QueryEvent{Type: "text", Content: resp.Text})

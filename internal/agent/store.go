@@ -155,7 +155,7 @@ func openInsightDB(path string) (*sql.DB, error) {
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		updated_at TEXT NOT NULL,
 		ciphertext BLOB NOT NULL
-	);` + proposalsSchema
+	);` + proposalsSchema + usageSchema
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)

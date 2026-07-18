@@ -166,6 +166,25 @@ export interface ServerSettings {
   mode: "readonly" | "assisted";
 }
 
+export interface UsageSource {
+  source: string; // "review" | "query"
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export interface UsageSummary {
+  days: number;
+  provider: string;
+  model: string;
+  hasPricing: boolean; // false for Ollama / unpriced models — show tokens only
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  bySource: UsageSource[];
+}
+
 export interface Proposal {
   id: string;
   createdAt: string;
@@ -239,6 +258,7 @@ export const api = {
       body: JSON.stringify(update),
     }),
   serverSettings: () => apiFetch<ServerSettings>("/api/v1/settings"),
+  usage: (days = 30) => apiFetch<UsageSummary>(`/api/v1/agent/usage?days=${days}`),
 
   // Remediation proposals (assisted mode). List/reject proxy to the agent;
   // apply goes to the SERVER (it holds the write RBAC).

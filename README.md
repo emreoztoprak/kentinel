@@ -45,6 +45,9 @@ Ollama provider, no cluster data ever leaves your infrastructure.
   transition-based, never spammy, configurable severity threshold
 - **Settings page** — view and change all agent parameters from the UI;
   changes apply live and persist encrypted to the agent's own database
+- **LLM usage & cost** — the dashboard tracks Kentinel's own token usage
+  (review loop vs. assistant) and shows an estimated 30-day cost for cloud
+  providers; local Ollama is free
 - **Update checks** — the dashboard checks GitHub for new releases and shows
   a ready-to-run `helm upgrade` command when one's available
 - **In-app documentation** — this entire docs set is browsable in the UI

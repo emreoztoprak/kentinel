@@ -66,6 +66,13 @@ type ChatRequest struct {
 type ChatResponse struct {
 	Text      string
 	ToolCalls []ToolCall // non-empty means the caller must run tools and continue
+	Usage     TokenUsage // token counts for this call (zero if the provider omits them)
+}
+
+// TokenUsage is the token count of a single LLM call, used for cost tracking.
+type TokenUsage struct {
+	InputTokens  int
+	OutputTokens int
 }
 
 // HasToolCalls reports whether the model asked for tool execution.

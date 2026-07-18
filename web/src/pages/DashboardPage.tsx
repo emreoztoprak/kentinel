@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import AiPanel from "../components/AiPanel";
 import ProposalsPanel from "../components/ProposalsPanel";
 import UpdateStatus from "../components/UpdateStatus";
+import UsageCard from "../components/UsageCard";
 import { ErrorBox, PageTitle, Spinner, StatusBadge } from "../components/ui";
 import { timeAgo } from "../util";
 
@@ -94,6 +95,10 @@ export default function DashboardPage() {
                 </ul>
               )}
             </div>
+          </div>
+
+          <div className="mt-6">
+            <UsageCard />
           </div>
         </>
       )}

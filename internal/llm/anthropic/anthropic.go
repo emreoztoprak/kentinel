@@ -73,7 +73,10 @@ func (p *Provider) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 		return nil, fmt.Errorf("anthropic: %w", err)
 	}
 
-	out := &llm.ChatResponse{}
+	out := &llm.ChatResponse{Usage: llm.TokenUsage{
+		InputTokens:  int(resp.Usage.InputTokens),
+		OutputTokens: int(resp.Usage.OutputTokens),
+	}}
 	for _, block := range resp.Content {
 		switch b := block.AsAny().(type) {
 		case sdk.TextBlock:

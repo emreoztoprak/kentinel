@@ -43,6 +43,7 @@ func (a *API) Router() http.Handler {
 	r.Get("/models", a.handleModels)
 	r.Post("/notifications/test", a.handleTestNotification)
 	r.Get("/metrics/health", a.handleMetricsHealth)
+	r.Get("/usage", a.handleUsage)
 
 	// Remediation proposals. The agent only reads/rejects/records them — it
 	// never applies (no write RBAC). The server calls /resolve after it
@@ -138,6 +139,27 @@ func (a *API) handleModels(w http.ResponseWriter, r *http.Request) {
 // handleGetConfig returns the runtime settings (API key masked to a bool).
 func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, a.runtime.View())
+}
+
+// handleUsage returns token usage and an estimated cost over ?days (default 30,
+// max 365). Cost is an estimate — see usage.go pricing notes.
+func (a *API) handleUsage(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			days = n
+		}
+	}
+	if days > 365 {
+		days = 365
+	}
+	view := a.runtime.View()
+	summary, err := a.store.Usage(days, view.Provider, view.Model)
+	if err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "usage_failed", "message": err.Error()})
+		return
+	}
+	a.writeJSON(w, http.StatusOK, summary)
 }
 
 // handleUpdateConfig validates and live-applies a settings update, then

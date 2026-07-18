@@ -237,6 +237,17 @@ interface.
 
 ## Cost & sizing notes
 
+The dashboard shows an **LLM usage** card — token counts (input/output, split
+by the review loop vs. the assistant) over the last 30 days, plus an
+**estimated** cost for priced cloud providers. Local Ollama shows tokens only
+(no API cost). Token counts come from each provider's own API response; the
+cost is `tokens × published per-model price` (`GET /api/v1/agent/usage`).
+
+The estimate is deliberately rough and **will not match your invoice**: prices
+are hardcoded (and drift when providers change them), prompt-caching and batch
+discounts aren't modeled, and it counts **only Kentinel's own calls** — it is
+not your whole-account spend (an inference API key can't read billing anyway).
+
 Where the tokens go:
 
 - The **review loop dominates cost** because it runs 24/7:
