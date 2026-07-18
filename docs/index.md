@@ -57,3 +57,16 @@ By default Kentinel installs in **read-only mode**: it observes and answers
 questions but cannot change any resource. Deploy with `--set mode=assisted`
 to enable approval-gated remediation, manifest editing, and the pod
 terminal — details in [Security](/security).
+
+## Try it: break a shop, watch the AI find it
+
+A demo microservice stack ships with the repo — deploy it healthy, then
+break it in four realistic ways:
+
+```sh
+make demo-up        # healthy "shop" namespace: storefront, orders-api, cache
+make demo-incident  # four distinct incidents appear
+# watch the dashboard flag them, then ask the assistant:
+#   "why is payments-api failing? check its logs"
+make demo-reset     # back to green (recovery notification!)
+```
