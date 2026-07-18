@@ -25,6 +25,9 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       AGENT_URL: http://agent:8090
+      # "readonly" (default) or "assisted" (manifest editor, terminal, and
+      # approval-gated remediation). Must match the agent below.
+      KENTINEL_MODE: ${KENTINEL_MODE:-readonly}
       KUBECONFIG: /kube/config
       LOG_FORMAT: json
     volumes:
@@ -43,6 +46,7 @@ services:
     ports:
       - "127.0.0.1:8090:8090"
     environment:
+      KENTINEL_MODE: ${KENTINEL_MODE:-readonly}
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_MODEL: ${LLM_MODEL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

@@ -75,7 +75,24 @@ kubectl -n kentinel port-forward svc/kentinel-server 8080:80
 # open http://localhost:8080
 ```
 
-Common variations (also switchable later from the Settings UI):
+By default this installs in **read-only mode** — Kentinel observes and answers
+questions but cannot change any resource (the server's RBAC has no write/exec
+verbs). To let the agent propose fixes you approve, and enable the manifest
+editor and pod terminal, deploy in **assisted mode**:
+
+```sh
+helm install kentinel oci://ghcr.io/emreoztoprak/charts/kentinel \
+  -n kentinel --create-namespace \
+  --set mode=assisted
+```
+
+Assisted mode is still safe by design: the agent never applies anything
+itself — it proposes a change, you approve it inline, and the server applies
+it. See [docs/security.md](docs/security.md). Switching modes requires a
+redeploy.
+
+Common variations (LLM/metrics settings are also switchable later from the
+Settings UI):
 
 ```sh
 # Use a cloud LLM instead of the bundled Ollama
@@ -110,6 +127,10 @@ Cloud LLM instead of Ollama:
 export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY / DEEPSEEK_API_KEY / GEMINI_API_KEY
 LLM_PROVIDER=anthropic docker compose up -d
 ```
+
+Docker mode also defaults to read-only. For approval-gated remediation +
+manifest editing, set `KENTINEL_MODE=assisted` (on both services in
+`docker-compose.yml`, or `KENTINEL_MODE=assisted docker compose up -d`).
 
 > Note for kind/minikube users: the API server address in your kubeconfig must
 > be reachable from inside the containers. See
@@ -154,16 +175,16 @@ make dev               # server :8080, agent :8090, Vite UI :5173
 
 ## Security note (read this)
 
-**v1 has no authentication.** Anyone who can reach the UI can exec into pods
-and edit manifests within the server's RBAC scope. Run it on localhost or
-behind `kubectl port-forward` only — details and future plans in
-[docs/security.md](docs/security.md).
+**v1 has no authentication.** Anyone who can reach the UI has whatever the
+current mode allows: read-only browsing + Q&A in `readonly` mode, and
+additionally manifest editing, pod exec, and approving agent proposals in
+`assisted` mode. Run it on localhost or behind `kubectl port-forward` only —
+threat model and mode details in [docs/security.md](docs/security.md).
 
 ## Planned
 
-Propose-and-approve remediation with an audit log, authentication
-(token → OIDC with RBAC impersonation), custom runbooks for the agent, and
-multi-cluster support.
+Authentication (token → OIDC with RBAC impersonation), custom runbooks for the
+agent, and multi-cluster support.
 
 ## License
 
