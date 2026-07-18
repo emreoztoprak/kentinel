@@ -37,13 +37,116 @@ features:
     details: Resource browser, Monaco YAML editing, log tailing, in-browser pod terminal, events, Prometheus-backed metrics — dark mode included.
 ---
 
+<script setup>
+import { ref } from 'vue'
+import { withBase } from 'vitepress'
+
+const track = ref(null)
+const current = ref(0)
+
+const slides = [
+  { img: '/screenshots/kentinel-dashboard-light.png',
+    alt: 'Dashboard with the AI cluster review flagging incidents',
+    caption: 'The AI review flags a typo’d image tag, an unschedulable pod, and a crash loop — each with a concrete recommendation (staged with make demo-incident).' },
+  { img: '/screenshots/kentinel-assistant-light.png',
+    alt: 'AI assistant chat',
+    caption: 'Ask anything about the cluster — the assistant investigates with read-only tools and streams a grounded answer.' },
+  { img: '/screenshots/kentinel-history-light.png',
+    alt: 'AI review history',
+    caption: 'Every review is persisted: filter by status, see when an incident started and when it recovered.' },
+  { img: '/screenshots/kentinel-pods-light.png',
+    alt: 'Pod browser',
+    caption: 'A full resource browser underneath: pods, deployments, YAML editing, logs, terminal, events.' },
+  { img: '/screenshots/kentinel-events-light.png',
+    alt: 'Cluster events',
+    caption: 'Cluster events with namespace and type filters.' },
+  { img: '/screenshots/kentinel-settings-light.png',
+    alt: 'Settings page',
+    caption: 'Switch between five LLM providers, wire up Discord/Slack/Teams alerts and the daily report — all from the UI, persisted encrypted.' },
+]
+
+function onScroll() {
+  const el = track.value
+  if (el) current.value = Math.round(el.scrollLeft / el.clientWidth)
+}
+function go(dir) {
+  const el = track.value
+  if (!el) return
+  const next = Math.min(Math.max(current.value + dir, 0), slides.length - 1)
+  el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' })
+}
+</script>
+
 ## See it
 
-![Kentinel dashboard — the AI cluster review flagging a broken image tag, a pending pod, and a crash loop, each with a concrete recommendation](/screenshots/kentinel-dashboard-dark.png)
+<div class="shots">
+  <div class="shots-track" ref="track" @scroll.passive="onScroll">
+    <figure class="shots-slide" v-for="s in slides" :key="s.img">
+      <img :src="withBase(s.img)" :alt="s.alt" loading="lazy" />
+      <figcaption>{{ s.caption }}</figcaption>
+    </figure>
+  </div>
+  <button class="shots-btn prev" aria-label="Previous screenshot" :disabled="current === 0" @click="go(-1)">‹</button>
+  <button class="shots-btn next" aria-label="Next screenshot" :disabled="current === slides.length - 1" @click="go(1)">›</button>
+  <div class="shots-dots">
+    <span v-for="(s, i) in slides" :key="i" :class="{ active: i === current }" />
+  </div>
+</div>
 
-The staged demo above: four incidents deployed with `make demo-incident`,
-every one found and explained by the review loop — including the typo in
-`nginx:1.27-alpin`.
+<style scoped>
+.shots { position: relative; margin: 16px 0; }
+.shots-track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  border-radius: 12px;
+}
+.shots-track::-webkit-scrollbar { display: none; }
+.shots-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  margin: 0;
+}
+.shots-slide img {
+  width: 100%;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  display: block;
+}
+.shots-slide figcaption {
+  padding: 8px 4px 0;
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+  text-align: center;
+  min-height: 3.2em;
+}
+.shots-btn {
+  position: absolute;
+  top: 42%;
+  transform: translateY(-50%);
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-size: 20px; line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.shots-btn:hover:not(:disabled) { opacity: 1; }
+.shots-btn:disabled { opacity: 0.25; cursor: default; }
+.shots-btn.prev { left: 10px; }
+.shots-btn.next { right: 10px; }
+.shots-dots { display: flex; justify-content: center; gap: 6px; margin-top: 6px; }
+.shots-dots span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--vp-c-divider);
+  transition: background 0.2s;
+}
+.shots-dots span.active { background: var(--vp-c-brand-1); }
+</style>
 
 And the assisted-mode loop end to end — the assistant diagnoses the broken
 checkout pod, proposes the fix as a reviewable diff, and after an inline
