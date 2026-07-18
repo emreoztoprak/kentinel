@@ -10,6 +10,13 @@
   <img src="docs/public/screenshots/kentinel-dashboard-dark.png" alt="Kentinel dashboard — the AI cluster review flagging a broken image tag, a pending pod, and a crash loop with concrete recommendations" width="900" />
 </p>
 
+<div align="center">
+  <h3>Diagnose → propose → approve → fixed</h3>
+  <p>
+    <img src="docs/public/screenshots/kentinel-approve-fix.gif" alt="The assistant diagnoses a failing pod, proposes the image-tag fix as a reviewable diff, and the server applies it after inline human approval" width="900" />
+  </p>
+</div>
+
 A modern Kubernetes console with a built-in AI agent that continuously
 reviews your cluster, alerts you when something breaks (Discord / Slack /
 Teams), and answers ad-hoc questions like *"why is payments-api failing?

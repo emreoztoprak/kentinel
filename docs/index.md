@@ -45,6 +45,12 @@ The staged demo above: four incidents deployed with `make demo-incident`,
 every one found and explained by the review loop — including the typo in
 `nginx:1.27-alpin`.
 
+And the assisted-mode loop end to end — the assistant diagnoses the broken
+checkout pod, proposes the fix as a reviewable diff, and after an inline
+human approval the server applies it and verifies the rollout:
+
+![Diagnose, propose, approve, fixed — the assisted-mode remediation flow](/screenshots/kentinel-approve-fix.gif)
+
 ## Quickstart
 
 Runs local-first out of the box — a bundled Ollama and a bundled minimal
