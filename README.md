@@ -72,12 +72,17 @@ Ollama provider, no cluster data ever leaves your infrastructure.
 <div align="center">
   <h3>Screenshots</h3>
   <p>
-    <img src="docs/public/screenshots/kentinel-history-dark.png" alt="AI review history with status trend" width="49%" />
+    <img src="docs/public/screenshots/kentinel-assistant-light.png" alt="AI assistant — ask anything about the cluster, answered with read-only tools" width="49%" />
+    <img src="docs/public/screenshots/kentinel-history-light.png" alt="AI review history — when did it start, when did it recover" width="49%" />
+  </p>
+  <p>
     <img src="docs/public/screenshots/kentinel-pods-light.png" alt="Pod browser across namespaces" width="49%" />
+    <img src="docs/public/screenshots/kentinel-events-light.png" alt="Cluster events with filters" width="49%" />
   </p>
   <p>
     <img src="docs/public/screenshots/kentinel-settings-light.png" alt="Settings — switch LLM providers, notifications, daily report" width="49%" />
   </p>
+  <p><a href="https://emreoztoprak.github.io/kentinel/">More on the docs site →</a></p>
 </div>
 
 ## Architecture (short version)
